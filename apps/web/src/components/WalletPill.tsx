@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, KeyRound, Wallet } from "lucide-react";
 import { DEMO_KEYS } from "../../../../packages/core/signing";
-import { connect, disconnect, ensureNetwork, getTestEth, roleOf, setSignWith, shortAddr, useWalletState } from "../wallet";
+import { connect, disconnect, ensureNetwork, getTestEth, isTestChain, roleOf, setSignWith, shortAddr, useWalletState } from "../wallet";
 
 /** Header control for the browser wallet (MetaMask): connect, see the role and balance, get free test ETH, choose what signs. */
 export default function WalletPill() {
@@ -19,6 +19,7 @@ export default function WalletPill() {
 
   const role = roleOf(w.account, w.info);
   const onNet = !w.info || w.chainId === w.info.chainId;
+  const onTest = isTestChain(w.chainId);
   const copy = (key: string, text: string) => { navigator.clipboard?.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(""), 1500); }).catch(() => undefined); };
 
   return (
@@ -27,6 +28,7 @@ export default function WalletPill() {
         title={w.account ? "Wallet connected" : "Connect a wallet"}>
         <Wallet size={15} strokeWidth={1.8} aria-hidden />
         <span className="wp-label">{w.account ? shortAddr(w.account) : "Connect"}</span>
+        {w.account && onTest && <span className="wp-test">test</span>}
         {w.account && <i className={"wp-dot" + (onNet ? "" : " warn")} aria-hidden />}
       </button>
       {open && (
@@ -43,11 +45,14 @@ export default function WalletPill() {
           ) : (
             <>
               <h3>Wallet connected</h3>
+              {onTest
+                ? <p className="wp-safe" role="status"><strong>Test network. No real money.</strong> This chain runs on your computer, and its ETH has no value. The app sends transactions only here.</p>
+                : <p className="wp-unsafe" role="alert"><strong>Not the test network (id {w.chainId ?? "unknown"}).</strong> The app will not send any transaction on this network. Use Switch below to return to the local test chain.{role && " This account's key is public: never use it on a real network, anything sent to it will be stolen."}</p>}
               <div className="wp-addr mono" title={w.account}>{w.account}</div>
               <div className="kv small">
                 <span>Role</span><span>{role ? <strong>{role.label}</strong> : <span className="warn">No role. Privileged actions will be refused and logged.</span>}</span>
                 <span>Network</span><span>{onNet ? (w.info?.name ?? "chain") : <><span className="bad">wrong network</span> <button type="button" className="btn ghost small" onClick={() => void ensureNetwork().catch(() => undefined)}>Switch</button></>}</span>
-                <span>Balance</span><span>{w.balance ?? "-"} {w.info?.symbol ?? "ETH"}</span>
+                <span>Balance</span><span>{w.balance ?? "-"} {onTest ? "test ETH" : (w.info?.symbol ?? "ETH")}</span>
               </div>
               {w.info?.faucet && <button type="button" className="btn ghost small" disabled={w.busy === "fund"} onClick={getTestEth}>{w.busy === "fund" ? "Sending…" : "Get free test ETH"}</button>}
               <div className="wp-seg" role="group" aria-label="Sign actions with">

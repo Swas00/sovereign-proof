@@ -257,7 +257,7 @@ function AnchorReceipt({ res, refresh }: { res: any; refresh: () => void }) {
           <span>Receipt hash</span><span className="mono">{short(done.hash)}</span>
           <span>Transaction</span><span className="mono">{short(done.txHash)}</span>
           <span>Block</span><span className="mono">#{done.block}</span>
-          <span>Gas</span><span>{Number(done.gasUsed).toLocaleString()} units · fee {Number(done.costEth).toFixed(6)} {w.info?.symbol ?? "ETH"}</span>
+          <span>Gas</span><span>{Number(done.gasUsed).toLocaleString()} units · fee {Number(done.costEth).toFixed(6)} {w.info?.local ? "test ETH (no real value)" : (w.info?.symbol ?? "ETH")}</span>
           {done.rejected && <><span>Refused</span><span className="bad">{done.rejected}</span></>}
         </div>
       )}
