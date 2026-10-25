@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { CRED_TYPE } from "../core/crypto";
@@ -20,6 +21,8 @@ const chain = await Chain.connect(); // retries ~25s so `npm run dev` can start 
 if (!chain.online) console.warn("chain unreachable at startup:", chain.error, "(verifiers will fail closed)");
 let st: State = await createState(chain);
 const app = express();
+// text assets (JS, CSS, JSON, WASM) are sent compressed; the 22 MB proving key is binary and barely shrinks, so it is left alone
+app.use(compression({ filter: (req, res) => (req.path.endsWith(".zkey") ? false : compression.filter(req, res)) }));
 app.use(express.json({ limit: "256kb" }));
 
 const wrap = (fn: (req: express.Request, res: express.Response) => unknown) => async (req: express.Request, res: express.Response) => {
@@ -58,9 +61,10 @@ const dec = (v: unknown, name: string, max = FIELD): bigint => {
 
 // Circuit artifacts for in-browser proving (public, they contain no secrets).
 const B = resolve(ROOT, "circuits/build");
-app.get("/artifacts/compound.wasm", (_q, r) => r.sendFile(resolve(B, "compound_proof_js/compound_proof.wasm")));
-app.get("/artifacts/compound.zkey", (_q, r) => r.sendFile(resolve(B, "compound.zkey")));
-app.get("/artifacts/compound_vkey.json", (_q, r) => r.sendFile(resolve(B, "compound_vkey.json")));
+const artifact = (file: string) => (_q: express.Request, r: express.Response) => r.set("Cache-Control", "public, max-age=86400").sendFile(resolve(B, file)); // proving files never change between builds
+app.get("/artifacts/compound.wasm", artifact("compound_proof_js/compound_proof.wasm"));
+app.get("/artifacts/compound.zkey", artifact("compound.zkey"));
+app.get("/artifacts/compound_vkey.json", artifact("compound_vkey.json"));
 
 app.get("/api/public", wrap(async (_q, r) => {
   const snap = await chain.snapshot();
@@ -162,5 +166,10 @@ app.post("/api/verifier/verify", wrap(async (q, r) => {
 }));
 
 const dist = resolve(ROOT, "apps/web/dist");
-if (existsSync(dist)) { app.use(express.static(dist)); }
+if (existsSync(dist)) {
+  app.use(express.static(dist, { maxAge: "1h", setHeaders: (res, path) => {
+    if (/[\\/]assets[\\/]/.test(path)) res.setHeader("Cache-Control", "public, max-age=31536000, immutable"); // content-hashed filenames
+    else if (/[\\/]hero[\\/]/.test(path)) res.setHeader("Cache-Control", "public, max-age=86400");
+  } }));
+}
 app.listen(PORT, () => console.log(`Sovereign Proof API on http://localhost:${PORT}`));

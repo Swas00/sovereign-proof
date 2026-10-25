@@ -330,3 +330,77 @@ tbody tr{transition:background-color .15s} tbody tr:hover{background:color-mix(i
 /* refused attempts stand out in the change history */
 tr.row-rejected td{background:color-mix(in srgb,var(--bad) 8%,transparent)}
 tr.row-rejected td:first-child{box-shadow:inset 3px 0 0 var(--bad)}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESPONSIVE: every size from a 280px folded phone to a 3440px ultrawide
+   ═══════════════════════════════════════════════════════════════════════ */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%} /* no font inflation when a phone rotates */
+button,select,input,a,summary,[role=button]{touch-action:manipulation} /* no double-tap zoom or 300ms delay on controls */
+a,button{-webkit-tap-highlight-color:color-mix(in srgb,var(--ink) 12%,transparent)}
+th,.tag-priv,.tag-pub{font-size:11px}
+.sh-root a.sh-credit{font-size:11px}
+
+/* notches and rounded corners: keep content inside the safe area, edge to edge backgrounds stay full-bleed */
+.wrap{padding-left:max(clamp(16px,3vw,32px),env(safe-area-inset-left));padding-right:max(clamp(16px,3vw,32px),env(safe-area-inset-right));padding-bottom:max(72px,calc(env(safe-area-inset-bottom) + 48px))}
+header{padding-top:max(20px,env(safe-area-inset-top))}
+.sh-root .sh-nav{padding-left:max(clamp(20px,3.2cqw,48px),env(safe-area-inset-left));padding-right:max(clamp(20px,3.2cqw,48px),env(safe-area-inset-right));padding-top:max(26px,env(safe-area-inset-top))}
+.sh-root .sh-content{padding-left:max(clamp(20px,3.2cqw,48px),env(safe-area-inset-left));padding-right:max(clamp(20px,3.2cqw,48px),env(safe-area-inset-right));padding-bottom:max(clamp(28px,3.4cqw,52px),calc(env(safe-area-inset-bottom) + 20px))}
+
+/* comfortable click targets on a mouse, too (WCAG 2.5.8) */
+.sh-root a.sh-link{padding:6px 0}
+.sh-root a.sh-credit{padding:5px 0}
+.brandlink{min-height:32px}
+
+/* touch: 44px targets, 16px form text (iOS zooms the page on focus below 16px) */
+@media (pointer:coarse){
+  header nav button{min-height:44px;padding:10px 14px}
+  .themebtn,.sh-root .sh-theme{width:44px;height:44px}
+  button.btn,button.btn.small{min-height:44px}
+  .brandlink{min-height:44px}
+  select,input{min-height:44px;font-size:16px}
+  .sh-root a.sh-navcta{min-height:44px;display:inline-flex;align-items:center}
+  .sh-root a.sh-txt{min-height:44px;display:inline-flex;align-items:center}
+  .sh-root a.sh-credit{padding:14px 12px;margin:-14px -12px}
+  .sh-root a.sh-brand,.sh-root a.sh-link{min-height:44px;display:inline-flex;align-items:center}
+  .sh-root a.sh-link{min-width:44px;justify-content:center;padding:6px 8px}
+  .row{gap:12px}
+}
+@media (max-width:640px){ select,input{font-size:16px} }
+
+/* tablets and narrow windows */
+@media (max-width:900px){
+  h1{font-size:clamp(34px,8.5vw,56px)}
+  .card{padding:20px}
+}
+
+/* wide tables become labelled cards instead of scrolling sideways (labels come from stacktables.ts) */
+@media (max-width:760px){
+  .tablewrap{overflow:visible}
+  table.stackable,table.stackable tbody,table.stackable tr,table.stackable td{display:block;width:100%}
+  table.stackable thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  table.stackable tr{border:1px solid var(--line);border-radius:4px;padding:8px 12px;margin:0 0 10px;background:var(--raised)}
+  table.stackable td{display:block;border:0;padding:6px 0;overflow-wrap:anywhere}
+  table.stackable td+td{border-top:1px dashed var(--line)}
+  table.stackable td::before{content:attr(data-label);display:block;margin-bottom:2px;font:500 11px/1.6 var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  table.stackable tr.row-rejected{border-color:var(--bad)}
+  table.stackable tr.row-rejected td,table.stackable tr.row-rejected td:first-child{background:none;box-shadow:none}
+  table.stackable tr.row-rejected{background:color-mix(in srgb,var(--bad) 8%,var(--raised))}
+  tbody tr:hover td:first-child{transform:none}
+}
+
+/* very narrow phones (folded devices, 280-340px): tighter chrome, nothing may force the page wider */
+@media (max-width:340px){
+  .wrap{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+  .card{padding:14px}
+  h1{font-size:clamp(30px,10vw,40px)}
+  header nav button{padding:10px 10px;font-size:13px;gap:6px}
+  button.btn{padding:10px 14px}
+  .verdict{flex-direction:column;align-items:flex-start;gap:10px}
+}
+img,svg,canvas,video{max-width:100%}
+.kv{grid-template-columns:minmax(80px,auto) minmax(0,1fr)} .kv span{overflow-wrap:anywhere}
+.timeline,.mono{overflow-wrap:anywhere}
+
+/* large and ultrawide screens: use the room, keep line lengths readable */
+@media (min-width:1800px){ .wrap{max-width:1360px} body{font-size:16px} }
+@media (min-width:2400px){ .wrap{max-width:1560px} body{font-size:17px} h1{font-size:76px} }

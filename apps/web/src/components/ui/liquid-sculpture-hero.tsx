@@ -1388,7 +1388,10 @@ export default function SculptureHero(props: SculptureHeroProps) {
   const contentRef = React.useRef<HTMLDivElement>(null)
   const backdropRef = React.useRef<HTMLDivElement>(null)
   const engineRef = React.useRef<LiquidEngine | null>(null)
-  const aspectRef = React.useRef(1983 / 793)
+  // Decide mobile vs desktop before the first render: otherwise phones first load the desktop image and then swap, which loads two
+  // images and shifts the layout.
+  const startsMobile = typeof window !== "undefined" && window.innerWidth < 640
+  const aspectRef = React.useRef(startsMobile ? 1024 / 1300 : 1983 / 793)
   const [isTouch, setIsTouch] = React.useState(false)
 
   const layout = React.useRef({ scale: sculptureScale, mobileScale: mobileSculptureScale, x: sculptureX, y: sculptureY })
@@ -1411,8 +1414,8 @@ export default function SculptureHero(props: SculptureHeroProps) {
     () => (imageBackground ? hexToRgb(imageBackground, [0.918, 0.914, 0.906]) : null),
     [imageBackground]
   )
-  const [isMobile, setIsMobile] = React.useState(false)
-  const mobileRef = React.useRef(false)
+  const [isMobile, setIsMobile] = React.useState(startsMobile)
+  const mobileRef = React.useRef(startsMobile)
   // pick the image for the current theme and layout, falling back sensibly
   const activeSrc =
     (isMobile && mode === "dark" && (mobileDarkSrc || darkSrc)) ||
@@ -1471,6 +1474,7 @@ export default function SculptureHero(props: SculptureHeroProps) {
       const chars = Math.max(1, (bd.textContent || "").length)
       bd.style.fontSize = Math.min((band.bottom - band.top) * 0.95, (w * 0.92) / (chars * 0.56)) + "px"
       bd.style.top = (band.top + band.bottom) / 2 + "px"
+      bd.style.visibility = ""
     }
     const img = imgRef.current
     if (img) {
@@ -1478,6 +1482,7 @@ export default function SculptureHero(props: SculptureHeroProps) {
       img.style.top = rect.y + "px"
       img.style.width = rect.w + "px"
       img.style.height = rect.h + "px"
+      img.style.visibility = ""
     }
     const hintEl = hintRef.current
     if (hintEl) {
@@ -1485,6 +1490,7 @@ export default function SculptureHero(props: SculptureHeroProps) {
       hintEl.style.display = mob && aspectRef.current < 1.3 ? "none" : ""
       hintEl.style.left = clamp(rect.x + rect.w / 2, 80, w - 80) + "px"
       hintEl.style.top = Math.min(rect.y + rect.h * 0.95, band.bottom - 20) + "px"
+      hintEl.style.visibility = ""
     }
     engineRef.current?.resize(w, h, rect)
   }, [])
@@ -1651,12 +1657,12 @@ export default function SculptureHero(props: SculptureHeroProps) {
     <section ref={rootRef} className={"sh-root" + (className ? " " + className : "")} style={{ ...vars, ...style }}>
       <style>{CSS}</style>
       {backdropText ? (
-        <div ref={backdropRef} className="sh-backdrop" aria-hidden="true">
+        <div ref={backdropRef} className="sh-backdrop" aria-hidden="true" style={{ visibility: "hidden" }}>
           {backdropText}
         </div>
       ) : null}
       <div ref={stageRef} className="sh-stage" aria-hidden="true">
-        <img ref={imgRef} className="sh-fallback" src={activeSrc} alt="" crossOrigin="anonymous" draggable={false} />
+        <img ref={imgRef} className="sh-fallback" src={activeSrc} alt="" crossOrigin="anonymous" draggable={false} style={{ visibility: "hidden" }} />
       </div>
       <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>{imageAlt}</span>
 
@@ -1697,7 +1703,7 @@ export default function SculptureHero(props: SculptureHeroProps) {
       )}
 
       {interactive && hintText ? (
-        <div ref={hintRef} className="sh-hint" aria-hidden="true">
+        <div ref={hintRef} className="sh-hint" aria-hidden="true" style={{ visibility: "hidden" }}>
           {hintText}
         </div>
       ) : null}

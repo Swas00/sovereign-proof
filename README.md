@@ -37,6 +37,20 @@ Honest limits:
 - It is a local dev chain, not a public network, with one node (no real decentralisation). The demo steers the chain clock (`evm_setNextBlockTimestamp`) to replay a multi-week timeline; the node only allows going forward.
 - The anchoring account must be a separate credential from the signing key. A thief holding both could still anchor inside the window, which the policy then quarantines; the window start must be set correctly.
 
+## Responsive and fast
+
+`npm run audit:responsive` loads every page (in its busiest state, tables full) at 20 device profiles (a 280px folded phone, small and large phones in both orientations, tablets, laptops, 1440p, ultrawide) and checks for sideways scrolling, off-screen or clipped content, overlapping siblings, touch targets under 44px, inputs under 16px (iOS zooms the page on focus), tiny text, a squashed hero and tables that scroll inside their box. `SELFTEST=1` plants real defects to prove the probe can fail (an earlier version could not: on mobile, `innerWidth` grows with wide content, so the audit now compares against the true device width). Current result: **0 problems across 120 page loads**.
+
+- Wide tables turn into labelled cards on small screens; controls are 44px on touch and 16px so iOS does not zoom; safe-area insets, `100svh`, no text inflation on rotate; large screens widen the layout.
+- The hero has a minimum height, so a landscape phone scrolls instead of crushing the sculpture.
+- **Proving runs in a Web Worker** (the page never freezes; falls back to the main thread if a browser cannot run workers). A request the credentials cannot satisfy gets a plain-language message instead of a circuit error.
+- **Adaptive hero quality:** starts at lower density on phones and low-core devices, starts static when the browser reports a software renderer (no GPU), and drops to the static image if real frame times fall under ~25 fps while someone interacts.
+- Server sends compressed JS/CSS/WASM and caches content-hashed assets for a year; font CSS is latin-only; proving code loads only when needed.
+
+Measured on a deliberately weak profile (4x CPU slowdown, slow-4G network), production build, phone viewport: first paint 5.5s -> 2.2s, largest content 7.5s -> 3.2s, layout shift 0.199 -> 0.002, transferred 1,175 KB -> 364 KB, and 0 ms of main-thread blocking while a proof is generated (was 334-407 ms). With WebGL off, a cursor sweep costs 66 ms of blocking and every frame stays at 17 ms.
+
+Honest limits: these are headless-Chrome emulations on one machine, not real devices (Safari/iOS and Firefox are untested); the sculpture's real-GPU cost could only be measured with software rendering, which is why the governor exists; the first proof still downloads a 22 MB proving key (cached afterwards).
+
 ## What is real
 - Groth16 proof (BN254, circom + snarkjs) of: three issuer EdDSA-Poseidon signatures, one holder, age over N, required degree, unexpired license, Poseidon Merkle inclusion in each issuer's issuance log. About 46k constraints, proved in the browser.
 - Signed, hash-chained trust registry (Ed25519), signed status lists, and issuance-log roots plus registry hashes recorded on a local EVM chain.

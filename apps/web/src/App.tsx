@@ -133,7 +133,7 @@ function Verify({ pub, refresh }: { pub: any; refresh: () => void }) {
       setBusy("Verifier is checking proof, issuer trust and revocation…");
       const out = await api("/api/verifier/verify", { requestId: req.id, proof: { proof: p.proof, publicSignals: p.publicSignals } });
       setMs(performance.now() - t0); setRes({ ...out, proofBytes: JSON.stringify(p.proof).length, requestId: req.id }); setReq(null); refresh();
-    } catch (e: any) { setErr(e.message || "proof generation failed: your credentials do not satisfy this request"); }
+    } catch (e: any) { setErr(/Assert Failed/.test(e?.message ?? "") || !e?.message ? "These credentials do not satisfy this request (for example the age, degree or license requirement is not met), so no proof can be generated." : e.message); }
     finally { clearInterval(tick); setBusy(""); }
   }
   const degLabel = pub.catalog.degrees[0].label, licLabel = pub.catalog.licenses[0].label;
