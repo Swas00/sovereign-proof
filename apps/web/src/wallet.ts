@@ -30,7 +30,16 @@ function provider(): Eip1193 | null {
   if (!e) return null;
   return e.providers?.find((p) => p.isMetaMask) ?? e;
 }
-const msg = (e: any) => (e?.code === 4001 ? "You rejected the request in the wallet." : String(e?.shortMessage ?? e?.message ?? e).slice(0, 180));
+/** Turns wallet and node errors into something a person can act on. */
+export function friendlyError(e: any): string {
+  const raw = String(e?.shortMessage ?? e?.message ?? e);
+  if (e?.code === 4001 || /user (rejected|denied)/i.test(raw)) return "You rejected the request in the wallet.";
+  if (e?.code === -32002) return "A request is already open in MetaMask. Open the extension and finish or cancel it.";
+  if (/nonce/i.test(raw)) return "MetaMask's saved transaction count no longer matches the chain. This happens after Reset demo or a node restart. In MetaMask open Settings, Advanced, then Clear activity tab data, and try again.";
+  if (/insufficient funds|exceeds balance/i.test(raw)) return "Not enough test ETH for the gas fee. Use Get free test ETH in the wallet panel.";
+  return raw.slice(0, 180);
+}
+const msg = friendlyError;
 const same = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 export const roleOf = (account: string | null, info: ChainInfo | null) => info?.roles.find((r) => same(r.address, account)) ?? null;
 export const shortAddr = (a: string) => a.slice(0, 6) + "…" + a.slice(-4);

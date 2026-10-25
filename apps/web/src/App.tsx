@@ -4,7 +4,7 @@ import { toggleTheme, useTheme } from "./theme";
 import { ROUTE_ROLE, signedPost } from "./signer";
 import WaveMesh from "@/components/ui/wave-mesh";
 import WalletPill from "@/components/WalletPill";
-import { anchorReceipt, connect, getWallet, shortAddr, useWalletState } from "./wallet";
+import { anchorReceipt, connect, friendlyError, getWallet, shortAddr, useWalletState } from "./wallet";
 import { receiptText } from "../../../packages/core/receipt";
 import { api } from "./api";
 import { proveInBrowser } from "./prove";
@@ -238,7 +238,7 @@ function AnchorReceipt({ res, refresh }: { res: any; refresh: () => void }) {
       const hash = sha256(toUtf8Bytes(receiptText({ auditId: res.auditId, verdict: res.verdict, steps: res.steps, registryVersion: res.registryVersion }))).slice(2);
       const out = await anchorReceipt(hash, res.registryVersion, res.verdict === "accepted");
       setDone({ ...out, hash }); await refresh();
-    } catch (e: any) { setErr(e?.code === 4001 ? "You rejected the transaction in the wallet." : String(e?.shortMessage ?? e?.message ?? e).slice(0, 200)); } finally { setBusy(false); }
+    } catch (e: any) { setErr(friendlyError(e)); } finally { setBusy(false); }
   }
   return (
     <div className="card receipt">
