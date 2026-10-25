@@ -117,14 +117,30 @@ export async function personalSign(message: string): Promise<{ address: string; 
 export interface Anchored { txHash: string; block: number; gasUsed: string; costEth: string; rejected?: string }
 const IFACE = ["function recordVerification(bytes32 receipt, uint32 registryVersion, bool accepted) returns (bool)", "event Rejected(address indexed actor, string action, bytes32 indexed target, string reason, uint64 time)"];
 
+/**
+ * The only chain this app will ever send a transaction on: the local development chain, whose ETH has no value.
+ * A transaction is refused (before the wallet is even asked) on any other network, so a wallet left on Ethereum mainnet or
+ * any other real network cannot be charged by this app.
+ */
+export const TEST_CHAIN_ID = 31337;
+const GAS_CAP = "0x30d40"; // 200,000 gas units: a receipt needs far less, and the cap bounds the fee if anything misbehaves
+export const isTestChain = (id: number | null | undefined) => id === TEST_CHAIN_ID;
+
 /** Sends the receipt transaction from the connected wallet (the wallet shows the gas fee and asks for confirmation). */
 export async function anchorReceipt(receiptHex: string, registryVersion: number, accepted: boolean): Promise<Anchored> {
   const p = provider(); if (!p || !state.account) throw new Error("Connect a wallet first.");
   const { Interface } = await import("ethers");
+  const info = await loadInfo(); set({ info });
+  if (!isTestChain(info.chainId)) throw new Error(`Refusing to send: this server reports chain ${info.chainId}, which is not the local test network. Nothing was sent.`);
   await ensureNetwork();
-  const info = state.info!; const iface = new Interface(IFACE);
+  const walletChain = parseInt(await p.request({ method: "eth_chainId" }), 16);
+  if (!isTestChain(walletChain)) throw new Error(`Your wallet is on network ${walletChain}, not the local test network. Switch networks in MetaMask. Nothing was sent.`);
+  const code: string = await p.request({ method: "eth_getCode", params: [info.contract, "latest"] });
+  if (!code || code === "0x") throw new Error("There is no contract at that address on this chain (was the demo reset?). Nothing was sent.");
+  const iface = new Interface(IFACE);
   const data = iface.encodeFunctionData("recordVerification", ["0x" + receiptHex, registryVersion, accepted]);
-  const txHash: string = await p.request({ method: "eth_sendTransaction", params: [{ from: state.account, to: info.contract, data }] });
+  // value is always zero: the contract has no payable function, so it could not accept money even if this were changed.
+  const txHash: string = await p.request({ method: "eth_sendTransaction", params: [{ from: state.account, to: info.contract, data, value: "0x0", gas: GAS_CAP }] });
   let rc: any = null;
   for (let i = 0; i < 60 && !rc; i++) { rc = await p.request({ method: "eth_getTransactionReceipt", params: [txHash] }); if (!rc) await new Promise((r) => setTimeout(r, 500)); }
   if (!rc) throw new Error("The transaction was sent but is not confirmed yet. Check the wallet.");
