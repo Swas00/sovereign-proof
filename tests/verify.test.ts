@@ -1,0 +1,109 @@
+import { describe, it, expect, beforeAll } from "vitest";
+import { buildInput, prove, type ZkProof } from "../packages/core/prover";
+import { buildWorld, CODES } from "../packages/core/fixtures";
+import { NonceStore, verifyPresentation, type VerifierRequest } from "../packages/core/verify";
+import { CRED_TYPE } from "../packages/core/crypto";
+import { publishNext, acceptRegistry, adminKeyFromSeed } from "../packages/core/registry";
+
+type W = Awaited<ReturnType<typeof buildWorld>>;
+let w: W; let base: ZkProof; let baseReq: VerifierRequest;
+const NOW = Date.parse("2026-10-25T12:00:00Z");
+const mkReq = (nonce: bigint, extra: Partial<VerifierRequest> = {}): VerifierRequest => ({
+  ageCutoff: 20050101n, requiredDegree: CODES.CS_DEGREE, requiredLicense: CODES.MEDICAL, today: 20261025n, nonce,
+  onStatusUnavailable: "reject", requiredIssuers: { degree: "uni-x" }, ...extra,
+});
+const ctxFor = (nonce: bigint, over: Partial<Parameters<typeof verifyPresentation>[2]> = {}) => {
+  const nonces = new NonceStore(); nonces.issue(NOW, nonce);
+  return { crypto: w.c, registry: w.registry, adminPub: w.admin.pub, statusLists: w.lists(), nonces, now: NOW + 1000, ...over };
+};
+const step = (r: Awaited<ReturnType<typeof verifyPresentation>>, id: string) => r.steps.find((s) => s.id === id)!;
+
+beforeAll(async () => {
+  w = await buildWorld();
+  baseReq = mkReq(1001n);
+  base = await prove(buildInput(w.holderSecret, w.creds.id, w.creds.degree, w.creds.license, baseReq));
+}, 120000);
+
+describe("verifier pipeline", () => {
+  it("accepts a valid compound presentation and discloses only issuers + policy", async () => {
+    const r = await verifyPresentation(base, baseReq, ctxFor(1001n));
+    expect(r.verdict).toBe("accepted");
+    expect(r.steps.every((s) => s.outcome === "pass")).toBe(true);
+    expect(r.disclosed.issuers.map((i) => i.issuerId)).toEqual(["gov-id", "uni-x", "med-board"]);
+    const dump = JSON.stringify(r);
+    for (const v of ["19950315", "20300101", "20180601", w.holderSecret.toString()]) expect(dump).not.toContain(v);
+  });
+  it("rejects replay of the same proof", async () => {
+    const ctx = ctxFor(1001n);
+    expect((await verifyPresentation(base, baseReq, ctx)).verdict).toBe("accepted");
+    const again = await verifyPresentation(base, baseReq, ctx);
+    expect(again.verdict).toBe("rejected");
+    expect(step(again, "nonce").detail).toContain("replayed");
+  });
+  it("rejects an expired challenge and an unknown challenge", async () => {
+    expect(step(await verifyPresentation(base, baseReq, ctxFor(1001n, { now: NOW + 10 * 60_000 })), "nonce").detail).toContain("expired");
+    expect(step(await verifyPresentation(base, baseReq, ctxFor(5n)), "nonce").detail).toContain("unknown");
+  });
+  it("rejects a proof made for a weaker policy than the verifier asked", async () => {
+    const weak = mkReq(1001n, { ageCutoff: 20150101n }); // over-11 instead of over-21
+    const r = await verifyPresentation(base, weak, ctxFor(1001n));
+    expect(r.verdict).toBe("rejected"); expect(step(r, "policy").outcome).toBe("fail");
+  });
+  it("rejects a valid proof signed by an issuer key not in the registry", async () => {
+    const forged = w.issue("uni-x", CRED_TYPE.DEGREE, CODES.CS_DEGREE, 20180601n, 2n, 22n, w.holderSecret, w.attacker);
+    const req = mkReq(2002n);
+    const p = await prove(buildInput(w.holderSecret, w.creds.id, forged, w.creds.license, req));
+    const r = await verifyPresentation(p, req, ctxFor(2002n));
+    expect(step(r, "zk").outcome).toBe("pass"); // the math is fine
+    expect(r.verdict).toBe("rejected"); expect(step(r, "trust-degree").detail).toContain("not in the trust registry");
+  });
+  it("rejects a degree from the wrong university when the verifier pins one", async () => {
+    const other = w.issue("uni-y", CRED_TYPE.DEGREE, CODES.CS_DEGREE, 20180601n, 2n, 22n);
+    const req = mkReq(3003n);
+    const p = await prove(buildInput(w.holderSecret, w.creds.id, other, w.creds.license, req));
+    const r = await verifyPresentation(p, req, ctxFor(3003n));
+    expect(r.verdict).toBe("rejected"); expect(step(r, "trust-degree").detail).toContain("requires uni-x");
+    // ...but accepted when no pin is set
+    const r2 = await verifyPresentation(p, mkReq(3003n, { requiredIssuers: undefined }), ctxFor(3003n));
+    expect(r2.verdict).toBe("accepted");
+  });
+  it("rejects a revoked medical license", async () => {
+    const r = await verifyPresentation(base, baseReq, ctxFor(1001n, { statusLists: w.lists({ "med-board": [3] }) }));
+    expect(r.verdict).toBe("rejected"); expect(step(r, "status-license").outcome).toBe("fail");
+    expect(step(r, "status-degree").outcome).toBe("pass"); // unrelated credentials unaffected
+  });
+  it("fails closed when the status service is unavailable, warns when policy allows", async () => {
+    const empty = new Map();
+    expect((await verifyPresentation(base, baseReq, ctxFor(1001n, { statusLists: empty }))).verdict).toBe("rejected");
+    const soft = await verifyPresentation(base, { ...baseReq, onStatusUnavailable: "warn" }, ctxFor(1001n, { statusLists: empty }));
+    expect(soft.verdict).toBe("accepted"); expect(step(soft, "status-license").outcome).toBe("warn");
+  });
+  it("quarantines a credential whose issuer key is declared compromised and keeps unrelated issuers valid", async () => {
+    const v2 = publishNext(w.registry, (b) => {
+      const k = b.issuers.find((i) => i.issuerId === "uni-x")!.keys[0];
+      k.status = "compromised";
+      k.compromise = { windowStart: "2026-10-23T10:00:00Z", windowEnd: "2026-10-25T10:00:00Z", reason: "simulated key theft" };
+    }, w.admin.priv, "2026-10-25T11:00:00Z");
+    const r = await verifyPresentation(base, baseReq, ctxFor(1001n, { registry: v2, pinnedRegistry: w.registry }));
+    expect(r.verdict).toBe("quarantined");
+    expect(step(r, "trust-degree").outcome).toBe("quarantine");
+    expect(step(r, "trust-identity").outcome).toBe("pass");
+    expect(step(r, "trust-license").outcome).toBe("pass");
+  });
+});
+
+describe("registry integrity", () => {
+  it("rejects a registry edited without the admin key", () => {
+    const evil = JSON.parse(JSON.stringify(w.registry)); evil.body.issuers[0].issuerId = "evil";
+    expect(acceptRegistry(evil, w.admin.pub).ok).toBe(false);
+  });
+  it("rejects a registry signed by another key", () => {
+    const other = publishNext(null, () => {}, adminKeyFromSeed("not-the-admin").priv, "x");
+    expect(acceptRegistry(other, w.admin.pub).ok).toBe(false);
+  });
+  it("rejects rollback to an older version", () => {
+    const v2 = publishNext(w.registry, () => {}, w.admin.priv, "2026-10-25T11:00:00Z");
+    const r = acceptRegistry(w.registry, w.admin.pub, v2);
+    expect(r.ok).toBe(false);
+  });
+});
