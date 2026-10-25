@@ -65,7 +65,7 @@ export default function App() {
     <div className="wrap">
       <header>
         <div className="brand"><a className="brandlink" href="#" aria-label="Sovereign Proof overview"><Mark /> Sovereign Proof</a></div>
-        {pub && <span className="phase" data-phase={pub.phase} aria-live="polite"><i className="dot" aria-hidden="true" />Registry v{pub.registry.body.version} · {phaseLabel}</span>}
+        {pub && <span className="phase" data-phase={pub.phase} aria-live="polite" title={`Registry v${pub.registry.body.version} · ${phaseLabel}`}><i className="dot" aria-hidden="true" /><span className="phase-t">Registry v{pub.registry.body.version} · {phaseLabel}</span></span>}
         <nav aria-label="Main">
           {([["verify", "Verify"], ["wallet", "Wallet"], ["trust", "Trust & incident"], ["issue", "Issue"], ["audit", "Audit"]] as const).map(([k, l]) => (
             <button key={k} aria-current={tab === k ? "page" : undefined} onClick={() => setTab(k)}>{NAV_ICON[k]}{l}</button>
