@@ -1,7 +1,9 @@
 import { canonical } from "../../../packages/core/canonical";
 import { DEMO_KEYS, requestMessage, type ActorRole } from "../../../packages/core/signing";
 
-const hex = (buf: ArrayBuffer) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+// crypto.subtle and crypto.randomUUID exist only on HTTPS or localhost; this must also work when the site is opened over plain http on a
+// local network, so hashing uses the ethers library and the nonce uses getRandomValues (available everywhere).
+const randomHex = (bytes: number) => [...crypto.getRandomValues(new Uint8Array(bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 /**
  * POST a privileged action signed by `role`'s key (EIP-191). The server recovers the signer from the signature and checks the
@@ -12,10 +14,10 @@ export async function signedPost<T = any>(path: string, body: unknown, role: Act
   const payload = body ?? {};
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (role) {
-    const { Wallet } = await import("ethers"); // loaded only when something is actually signed
+    const { Wallet, sha256, toUtf8Bytes } = await import("ethers"); // loaded only when something is actually signed
     const wallet = new Wallet(DEMO_KEYS[role]);
-    const nonce = crypto.randomUUID(), ts = Date.now();
-    const sha = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical(payload))));
+    const nonce = randomHex(16), ts = Date.now();
+    const sha = sha256(toUtf8Bytes(canonical(payload))).slice(2); // same SHA-256 hex the server computes
     headers["x-actor"] = wallet.address; headers["x-nonce"] = nonce; headers["x-timestamp"] = String(ts);
     headers["x-signature"] = await wallet.signMessage(requestMessage("POST", path, sha, nonce, ts));
   }
