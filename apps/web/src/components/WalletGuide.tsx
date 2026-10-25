@@ -34,6 +34,7 @@ export default function WalletGuide({ pub }: { pub: any }) {
           </li>
         ))}
       </ol>
+      {w.error && <p className="err small" role="alert" style={{ marginBottom: 0 }}>{w.error}</p>}
       {w.account && (
         <>
           <h3 className="mt">What the system recorded about {shortAddr(w.account)}</h3>
