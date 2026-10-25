@@ -6,6 +6,27 @@
 3. Start the project: `npm run dev`, then open http://localhost:5173/#app/verify.
 4. Do not send real money to any account used here. The demo role keys are public test keys that anyone can derive.
 
+## The demo accounts (public test keys)
+Import one into MetaMask (Account menu, Import account, paste the private key) to hold that role. The wallet panel's "Copy key" button copies the same value. These keys are public and worthless on any real network: never send real money to them.
+
+| Role | What it can do in the demo | Address | Private key |
+|---|---|---|---|
+| admin | Declare a compromise, restore data from the chain | `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266` | `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` |
+| uni-x (Northfield University) | Re-attest degrees, issue as the university | `0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC` | `0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a` |
+| uni-y (Eastbrook University) | Issue as the second university | `0x90F79bf6EB2c4f870365E785982E1f101E93b906` | `0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6` |
+| gov-id (National Identity Authority) | Issue national IDs | `0x70997970C51812dc3A010C7d01b50e0d17dc79C8` | `0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d` |
+| med-board (State Medical Board) | Revoke and issue medical licenses | `0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65` | `0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a` |
+
+The audit-log anchoring account has no key in the browser; the server uses it.
+
+Which button needs which role (with "My wallet" selected):
+- Trust: **2 · Declare key compromise** needs admin. **3 · University re-issues** needs uni-x. **Revoke Alice's license** needs med-board. **1 · Thief issues** and the take-down toggles need nobody.
+- Issue: **Sign & issue** needs the role of the issuer chosen in the form (uni-x by default).
+- Audit: **Restore from the chain** needs admin. The attack buttons and the verification flow need nobody.
+- A button that is refused tells you which role it needs. To run the whole storyline with one click each and no wallet prompts, choose **Demo keys** in the wallet panel.
+
+`node scripts/wallet-buttons.mjs` clicks every button listed here, in a real browser, and checks each one's effect (37 checks).
+
 ## The 3-minute demo (say it while you click)
 | Step | You do | What the judge sees | What to say |
 |---|---|---|---|
