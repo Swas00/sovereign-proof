@@ -12,24 +12,25 @@ const ok = (n, c, x = "") => { if (!c) fails++; console.log((c ? "  ok   " : "  
 const api = (p, b) => fetch(APP + p, b ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) } : undefined).then((r) => r.json());
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function session(wallet, label, fn) {
+async function session(wallet, label, fn, opts = {}) {
   console.log("--- " + label + "  " + wallet.address);
   const provider = new JsonRpcProvider(RPC, undefined, { staticNetwork: true });
   const w = wallet.connect(provider);
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage(); await page.setViewport({ width: 1280, height: 900 });
-  let chain = "0x1", added = false, failSend = true; const log = [];
+  let chain = "0x1", added = false, failSend = !opts.stuck; const log = [], sent = [];
   await page.exposeFunction("__eth", async (method, params) => {
     log.push(method);
     try {
       switch (method) {
         case "eth_requestAccounts": case "eth_accounts": return { result: [w.address] };
         case "eth_chainId": return { result: chain };
-        case "wallet_switchEthereumChain": if (!added) return { error: { code: 4902, message: "Unrecognized chain ID" } }; chain = params[0].chainId; return { result: null };
-        case "wallet_addEthereumChain": if (params[0].chainId !== "0x7a69" || !params[0].rpcUrls.includes(RPC)) return { error: { code: -32602, message: "bad chain params" } }; added = true; chain = params[0].chainId; return { result: null };
+        case "wallet_switchEthereumChain": if (opts.stuck === "ignore") return { result: null }; if (!added) return { error: { code: 4902, message: "Unrecognized chain ID" } }; chain = params[0].chainId; return { result: null };
+        case "wallet_addEthereumChain": if (opts.stuck === "ignore") return { result: null }; if (params[0].chainId !== "0x7a69" || !params[0].rpcUrls.includes(RPC)) return { error: { code: -32602, message: "bad chain params" } }; added = true; chain = params[0].chainId; return { result: null };
+        case "eth_getCode": return { result: await provider.send("eth_getCode", params) };
         case "eth_getBalance": return { result: await provider.send("eth_getBalance", params) };
         case "personal_sign": return { result: await w.signMessage(getBytes(params[0])) };
-        case "eth_sendTransaction": { if (failSend) { failSend = false; return { error: { code: -32603, message: "nonce too high" } }; } const t = await w.sendTransaction({ to: params[0].to, data: params[0].data }); return { result: t.hash }; }
+        case "eth_sendTransaction": { sent.push(params[0]); if (failSend) { failSend = false; return { error: { code: -32603, message: "nonce too high" } }; } const t = await w.sendTransaction({ to: params[0].to, data: params[0].data }); return { result: t.hash }; }
         case "eth_getTransactionReceipt": return { result: await provider.send("eth_getTransactionReceipt", params) };
         default: return { error: { code: -32601, message: "unsupported in test: " + method } };
       }
@@ -42,14 +43,14 @@ async function session(wallet, label, fn) {
   const click = async (text, sel = "button") => { const h = await page.evaluateHandle((t, s) => [...document.querySelectorAll(s)].find((b) => b.textContent.trim().startsWith(t) && !b.disabled), text, sel); const el = h.asElement(); if (!el) throw new Error("no button: " + text); await el.click(); };
   const text = () => page.evaluate(() => document.body.innerText);
   const waitText = async (t, ms = 15000) => { const end = Date.now() + ms; while (Date.now() < end) { if ((await text()).includes(t)) return true; await sleep(150); } return false; };
-  try { await fn({ page, click, text, waitText, w, log, provider }); } finally { await browser.close(); }
+  try { await fn({ page, click, text, waitText, w, log, provider, sent }); } finally { await browser.close(); }
 }
 
 await api("/api/demo/reset", {});
 
 // 1) A brand-new free wallet: no role. Connect, add the network, take free test ETH, anchor a receipt, get refused when acting as admin.
 const fresh = Wallet.createRandom();
-await session(fresh, "fresh wallet (no role)", async ({ page, click, text, waitText, log, provider }) => {
+await session(fresh, "fresh wallet (no role)", async ({ page, click, text, waitText, log, provider, sent }) => {
   await page.goto(APP + "/#app/audit", { waitUntil: "networkidle0" });
   await click("Connect");
   ok("panel offers MetaMask", await waitText("Connect MetaMask"));
@@ -58,7 +59,7 @@ await session(fresh, "fresh wallet (no role)", async ({ page, click, text, waitT
   ok("the chain was added to the wallet (switch refused, then add)", log.includes("wallet_addEthereumChain") && log.includes("wallet_switchEthereumChain"), log.join(","));
   ok("fresh wallet has no role", await waitText("No role"));
   await click("Get free test ETH");
-  ok("faucet funded the wallet", await waitText("1.0000 ETH"));
+  ok("faucet funded the wallet", await waitText("1.0000 test ETH"));
   ok("balance on the chain matches", (await provider.getBalance(fresh.address)) === 10n ** 18n);
   // a privileged button, signed by this wallet, must be refused and recorded under THIS address
   await page.keyboard.press("Escape");
@@ -79,6 +80,8 @@ await session(fresh, "fresh wallet (no role)", async ({ page, click, text, waitT
   await click("Anchor as");
   ok("a MetaMask nonce error is explained in plain words", await waitText("Clear activity tab data"));
   await click("Anchor as");
+  const tx = sent[sent.length - 1], info = await api("/api/chain/info");
+  ok("the transaction carries zero value, a gas cap, and targets only the TrustAnchor contract", tx.value === "0x0" && tx.gas === "0x30d40" && tx.to.toLowerCase() === info.contract.toLowerCase(), JSON.stringify({ ...tx, data: "…" }));
   ok("receipt anchored (block, gas, fee shown)", await waitText("fee ", 20000) && (await text()).includes("Block"));
   const after = await api("/api/public");
   const r = after.receipts[0];
@@ -89,6 +92,24 @@ await session(fresh, "fresh wallet (no role)", async ({ page, click, text, waitT
   ok("checklist now shows the anchored receipt (5 of 6)", await waitText("5 of 6 done"));
   ok("the receipt is in the chain audit feed with the wallet as actor", after.chain.audit.some((a) => a.action === "Verification receipt anchored" && a.actor.toLowerCase() === fresh.address.toLowerCase()));
 });
+
+// 1b) A wallet that will not leave a real network must never be sent a transaction, whether it refuses to switch or pretends to.
+for (const stuck of ["ignore"]) {
+  const w1 = Wallet.createRandom();
+  await session(w1, `wallet that stays on Ethereum mainnet (switch ${stuck === "ignore" ? "silently ignored" : "refused"})`, async ({ page, click, text, waitText, sent }) => {
+    const receiptsBefore = (await api("/api/public")).receipts.length;
+    await page.goto(APP + "/#app/verify", { waitUntil: "networkidle0" });
+    await click("Connect"); await click("Connect MetaMask");
+    ok("panel warns this is not the test network", await waitText("Not the test network"));
+    await page.keyboard.press("Escape");
+    await click("Create verification request"); await sleep(500); await click("Generate proof");
+    ok("verification still works (signing and proving need no money)", await waitText("Anchor this result from your wallet", 60000));
+    await click("Anchor as");
+    ok("the app refuses to send and says nothing was sent", await waitText("Nothing was sent"));
+    ok("no transaction was ever offered to the wallet", sent.length === 0, JSON.stringify(sent));
+    ok("no receipt reached the chain", (await api("/api/public")).receipts.length === receiptsBefore);
+  }, { stuck });
+}
 
 // 2) The admin test key imported into the wallet: the same button now succeeds, attributed to the admin address.
 await session(new Wallet(ADMIN_KEY), "wallet holding the admin role", async ({ page, click, waitText }) => {
