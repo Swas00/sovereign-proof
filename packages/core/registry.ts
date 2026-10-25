@@ -35,14 +35,8 @@ export interface RegistryBody {
 
 export interface SignedRegistry { body: RegistryBody; hash: string; sig: string }
 
-/** Deterministic JSON: sorted keys, so signatures and hashes are reproducible. */
-export function canonical(v: unknown): string {
-  if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
-  if (v && typeof v === "object")
-    return `{${Object.keys(v as object).sort().filter((k) => (v as any)[k] !== undefined)
-      .map((k) => `${JSON.stringify(k)}:${canonical((v as any)[k])}`).join(",")}}`;
-  return JSON.stringify(v);
-}
+import { canonical } from "./canonical";
+export { canonical };
 export const sha256hex = (s: string) => createHash("sha256").update(s).digest("hex");
 
 const PKCS8_ED25519 = Buffer.from("302e020100300506032b657004220420", "hex");

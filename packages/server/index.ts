@@ -7,7 +7,10 @@ import { CATALOG, credToWire, reqToProof, type WireRequest } from "../core/wire"
 import { rootFromPath } from "../core/merkle";
 import { CODES } from "../core/fixtures";
 import { createState, type State } from "./state";
-import { Chain } from "./chain";
+import { ACCOUNT, Chain } from "./chain";
+import { AuthError, authenticate } from "./auth";
+import { canonical } from "../core/canonical";
+import { sha256hex } from "../core/registry";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -21,6 +24,32 @@ app.use(express.json({ limit: "256kb" }));
 
 const wrap = (fn: (req: express.Request, res: express.Response) => unknown) => async (req: express.Request, res: express.Response) => {
   try { await fn(req, res); } catch (e: any) { res.status(400).json({ error: e.message ?? "bad request" }); }
+};
+/**
+ * Every write goes through here. Privileged actions need a signature from the right account: the signer is recovered, never
+ * trusted from a header, and must be the admin or that issuer's own account. Whatever happens (accepted, denied, error), the
+ * attempt is written to the hash-chained access log, whose head is anchored on the chain.
+ */
+type Req = express.Request; type Res = express.Response;
+const roleAddress = (need: string) => (need === "admin" ? chain.addressOf(ACCOUNT.admin) : need.startsWith("issuer:") ? chain.addressOf((ACCOUNT as any)[need.slice(7)] ?? -1) : "");
+const audited = (detail: string, need: null | ((req: Req) => string), fn: (req: Req, res: Res) => unknown) => async (req: Req, res: Res) => {
+  const bodySha256 = sha256hex(canonical(req.body ?? {}));
+  let actor = "-", actorLabel = need ? "(anonymous)" : "(demo control, unauthenticated)";
+  try {
+    if (need) {
+      const requires = need(req);
+      actor = authenticate(req); actorLabel = chain.labelOf(actor);
+      const want = roleAddress(requires);
+      if (!want || actor.toLowerCase() !== want.toLowerCase()) throw new AuthError(403, `${actorLabel} is not authorised for this action (requires ${requires})`, actor);
+    }
+    await fn(req, res);
+    await st.logAccess({ actor, actorLabel, method: req.method, path: req.path, bodySha256, outcome: "ok", detail });
+  } catch (e: any) {
+    const denied = e instanceof AuthError;
+    if (denied && actor === "-" && e.actor) { actor = e.actor; actorLabel = `${chain.labelOf(e.actor)} (claimed, not verified)`; }
+    await st.logAccess({ actor, actorLabel, method: req.method, path: req.path, bodySha256, outcome: denied ? "denied" : "error", detail: `${detail}: ${e.message ?? "failed"}` });
+    if (!res.headersSent) res.status(denied ? e.status : 400).json({ error: e.message ?? "bad request" });
+  }
 };
 const dec = (v: unknown, name: string, max = FIELD): bigint => {
   if (typeof v !== "string" || !/^\d{1,80}$/.test(v)) throw new Error(`${name} must be a decimal string`);
@@ -40,7 +69,8 @@ app.get("/api/public", wrap(async (_q, r) => {
     phase: st.phase, outage: st.outage, catalog: CATALOG,
     registry: st.registry, history: st.history.map((h) => ({ version: h.body.version, issuedAt: h.body.issuedAt, hash: h.hash, note: h.body.note })),
     keyStatus, anchors: snap.anchors.map((a) => ({ ...a, sig: undefined })), summary: snap.ok ? st.summary(snap.anchors) : undefined,
-    chain: { ok: snap.ok, error: snap.error, network: snap.network, rpc: snap.rpc, contract: snap.contract, blockNumber: snap.blockNumber, blockTime: snap.blockTime, registry: snap.registry, audit: st.enrichAudit(snap.audit).reverse(), simulatedOutage: chain.forceOffline },
+    chain: { ok: snap.ok, error: snap.error, network: snap.network, rpc: snap.rpc, contract: snap.contract, blockNumber: snap.blockNumber, blockTime: snap.blockTime, registry: snap.registry, audit: st.enrichAudit(snap).reverse(), auditHeads: snap.auditHeads, simulatedOutage: chain.forceOffline },
+    accessLog: st.accessLog.entries.slice(-60).reverse(),
     revokedSlots: Object.fromEntries(Object.entries(st.revoked).map(([k, v]) => [k, v.length])),
     events: st.log.slice(-40), audit: st.audit.slice(-30),
   });
@@ -50,22 +80,25 @@ app.get("/api/demo/wallet/:profile", wrap((q, r) => {
   const w = st.wallets[q.params.profile]; if (!w) throw new Error("unknown profile");
   r.json(w);
 }));
-app.post("/api/demo/steal", wrap(async (_q, r) => { await st.steal(); r.json({ ok: true }); }));
-app.post("/api/demo/declare", wrap(async (_q, r) => { await st.declare(); r.json({ ok: true }); }));
-app.post("/api/demo/reissue", wrap(async (q, r) => { await st.reissue(String(q.body.profile)); r.json({ ok: true }); }));
-app.post("/api/demo/revoke-license", wrap(async (q, r) => { await st.revokeLicense(String(q.body.profile)); r.json({ ok: true }); }));
-// Accountability demos: an outsider's attempt (recorded on the chain), stored-data tampering (detected by comparison with the chain), and recovery.
-app.post("/api/demo/attempt-unauthorised", wrap(async (_q, r) => { await st.attemptUnauthorised(); r.json({ ok: true }); }));
-app.post("/api/demo/tamper-registry", wrap((_q, r) => { st.tamperRegistry(); r.json({ ok: true }); }));
-app.post("/api/demo/rollback-status", wrap((_q, r) => { st.rollbackStatus(); r.json({ ok: true }); }));
-app.post("/api/demo/restore", wrap((_q, r) => { st.restore(); r.json({ ok: true }); }));
+// Privileged actions (signed by an authorised account) ...
+app.post("/api/demo/declare", audited("declared the uni-x key compromised", () => "admin", async (_q, r) => { await st.declare(); r.json({ ok: true }); }));
+app.post("/api/demo/reissue", audited("re-attested a degree under the replacement key", () => "issuer:uni-x", async (q, r) => { await st.reissue(String(q.body.profile)); r.json({ ok: true }); }));
+app.post("/api/demo/revoke-license", audited("revoked a license slot", () => "issuer:med-board", async (q, r) => { await st.revokeLicense(String(q.body.profile)); r.json({ ok: true }); }));
+app.post("/api/demo/restore", audited("restored served data from the chain", () => "admin", async (_q, r) => { await st.restore(); r.json({ ok: true }); }));
+// ... and demo controls that stand for an adversary or the test harness. They need no signature (that is the point), but they are logged too.
+app.post("/api/demo/steal", audited("simulated attacker used the stolen uni-x key", null, async (_q, r) => { await st.steal(); r.json({ ok: true }); }));
+app.post("/api/demo/attempt-unauthorised", audited("an outsider tried to write to the chain", null, async (_q, r) => { await st.attemptUnauthorised(); r.json({ ok: true }); }));
+app.post("/api/demo/tamper-registry", audited("someone edited the stored registry", null, (_q, r) => { st.tamperRegistry(); r.json({ ok: true }); }));
+app.post("/api/demo/rollback-status", audited("someone replayed an old status list", null, (_q, r) => { st.rollbackStatus(); r.json({ ok: true }); }));
+app.post("/api/demo/tamper-log", audited("someone rewrote an access-log entry", null, (_q, r) => { st.tamperAccessLog(); r.json({ ok: true }); }));
 app.get("/api/integrity", wrap(async (_q, r) => { r.json(await st.integrity()); }));
-app.post("/api/demo/outage", wrap((q, r) => { st.outage = !!q.body.on; st.event("status", st.outage ? "status service taken offline" : "status service restored"); r.json({ ok: true }); }));
-app.post("/api/demo/chain-outage", wrap((q, r) => { chain.forceOffline = !!q.body.on; st.event("chain", chain.forceOffline ? "chain taken offline (simulated): verifiers fail closed" : "chain back online"); r.json({ ok: true }); }));
-app.post("/api/demo/reset", wrap(async (_q, r) => { chain.forceOffline = false; await chain.ping(3, 500); st = await createState(chain); r.json({ ok: true }); }));
+app.get("/api/access-log/verify", wrap(async (_q, r) => { r.json(await st.verifyAccessLog()); }));
+app.post("/api/demo/outage", audited("status service toggled", null, (q, r) => { st.outage = !!q.body.on; st.event("status", st.outage ? "status service taken offline" : "status service restored"); r.json({ ok: true }); }));
+app.post("/api/demo/chain-outage", audited("chain outage toggled", null, (q, r) => { chain.forceOffline = !!q.body.on; st.event("chain", chain.forceOffline ? "chain taken offline (simulated): verifiers fail closed" : "chain back online"); r.json({ ok: true }); }));
+app.post("/api/demo/reset", audited("reset demo", null, async (_q, r) => { chain.forceOffline = false; await chain.ping(3, 500); st = await createState(chain); r.json({ ok: true }); }));
 
 // Issuance: the holder sends only their holderId (a hash); the issuer never sees the holder secret.
-app.post("/api/issue", wrap(async (q, r) => {
+app.post("/api/issue", audited("issued a credential", (q) => `issuer:${String(q.body?.issuerId)}`, async (q, r) => {
   const issuer = st.registry.body.issuers.find((i) => i.issuerId === q.body.issuerId); if (!issuer) throw new Error("unknown issuer");
   const type = Number(q.body.type); if (![1, 2, 3].includes(type) || !issuer.credTypes.includes(type)) throw new Error("issuer is not authorized for this credential type");
   const holderId = dec(q.body.holderId, "holderId"), a1 = dec(q.body.a1, "a1", 2n ** 32n);

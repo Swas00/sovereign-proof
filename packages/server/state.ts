@@ -7,6 +7,7 @@ import { NonceStore } from "../core/verify";
 import { credToWire, type WireCred, type WireRequest } from "../core/wire";
 import { canonical, sha256hex, type SignedRegistry } from "../core/registry";
 import { buildStatusList, type StatusList } from "../core/status";
+import { AccessLog } from "./accesslog";
 import { diffJson, diffStatus, type Change } from "../core/diff";
 import type { SignedCredential } from "../core/proofinput";
 
@@ -72,7 +73,7 @@ export async function createState(chain: Chain) {
     const kid = keyId(key), version = (statusVersion[kid] ?? 0) + 1;
     const l = buildStatusList(w.c, key.prv, kid, version, SIZE, st.revoked[issuerId] ?? [], atIso);
     statusVersion[kid] = version; issuerOfKey[kid] = issuerId; served.set(kid, l); listArchive.set(`${kid}:${version}`, l);
-    if (chain.online) await chain.publishStatus(kid, version, sha256hex(canonical(l)), note, anchorer[kid], atIso);
+    if (chain.online) await chain.publishStatus(kid, version, sha256hex(canonical(l)), note, anchorer[kid], atIso, canonical(l));
   }
 
   const st = {
@@ -126,61 +127,91 @@ export async function createState(chain: Chain) {
       served.set(kid, older);
       event("tamper", `someone replaced the served med-board status list v${v} with the older signed v${v - 1}, un-revoking a credential (the signature is still valid)`);
     },
-    /** Put the served data back from the verified archive. */
-    restore() {
-      st.registry = st.history[st.history.length - 1];
-      for (const [kid, v] of Object.entries(statusVersion)) { const l = listArchive.get(`${kid}:${v}`); if (l) served.set(kid, l); }
-      event("restore", "stored registry and status lists restored from the verified archive");
+    /** Restore the served data from the CHAIN: registry body + signature and the latest status list per key. No server archive involved. */
+    async restore() {
+      const snap = await chain.snapshot();
+      if (!snap.ok) throw new Error("chain unreachable: cannot restore from the chain");
+      const rec = snap.registry[snap.registry.length - 1];
+      if (rec && sha256hex(rec.content) === rec.hash) st.registry = { body: JSON.parse(rec.content), hash: rec.hash, sig: rec.sig };
+      for (const [kid, recs] of Object.entries(snap.status)) { const last = recs[recs.length - 1]; if (last && sha256hex(last.content) === last.hash) served.set(kid, JSON.parse(last.content)); }
+      event("restore", "stored registry and status lists restored from the content recorded on the chain");
     },
-    /** Compare what is served with what the chain recorded, and explain every difference. */
+    /** Compare what is served with what the chain recorded, and explain every difference (content comes from the chain). */
     async integrity() {
       const snap = await chain.snapshot();
       if (!snap.ok) return { ok: false as const, error: snap.error ?? "chain unreachable", findings: [] };
-      type Finding = { subject: string; ok: boolean; summary: string; chain?: any; changes?: Change[]; previous?: string };
+      type Finding = { subject: string; ok: boolean; summary: string; chain?: any; changes?: Change[]; previous?: string; forensics?: string[] };
       const findings: Finding[] = [];
       const meta = (r: { publisherLabel: string; time: string; blockNumber?: number; txHash?: string; hash: string }) => ({ by: r.publisherLabel, at: r.time, block: r.blockNumber, tx: r.txHash, hash: r.hash });
+      // forensics: could an authenticated, signed write explain a difference? The access log says.
+      const lastOk = (paths: string[]) => [...st.accessLog.entries].reverse().find((e) => e.outcome === "ok" && paths.includes(e.path));
+      const since = (seq: number) => st.accessLog.entries.filter((e) => e.seq > seq && e.outcome === "ok" && e.actor !== "-").map((e) => `#${e.seq} ${e.actorLabel}: ${e.detail}`);
+      const forensicsFor = (paths: string[], what: string) => {
+        const w = lastOk(paths);
+        return [w ? `Last signed write that changes the ${what}: access-log #${w.seq} by ${w.actorLabel} (${w.actor.slice(0, 10)}…), ${w.time.slice(0, 19).replace("T", " ")}.` : `No signed write in the access log has ever changed the ${what}.`,
+          `No signed, authorised write after that explains the difference. Signed writes since then: ${w ? (since(w.seq).join("; ") || "none") : "none"}.`,
+          "So this change did not go through the application's authenticated path."];
+      };
       // registry as currently served
       const v = st.registry.body.version, rec = snap.registry.find((r) => r.version === v), latest = snap.registry[snap.registry.length - 1];
       const servedHash = sha256hex(canonical(st.registry.body));
       if (!rec) findings.push({ subject: `Trust registry v${v}`, ok: false, summary: "this version was never recorded on the chain" });
       else if (rec.hash !== servedHash) {
-        const orig = st.history.find((h) => h.body.version === v), prev = snap.registry.find((r) => r.version === v - 1);
-        const prevOk = prev && st.history.find((h) => h.body.version === v - 1) && sha256hex(canonical(st.history.find((h) => h.body.version === v - 1)!.body)) === prev.hash;
+        const prev = snap.registry.find((r) => r.version === v - 1);
         findings.push({ subject: `Trust registry v${v}`, ok: false, summary: "the served registry does NOT match what the registry admin recorded on the chain: it was changed after publication",
-          chain: meta(rec), changes: orig && sha256hex(canonical(orig.body)) === rec.hash ? diffJson(orig.body, st.registry.body) : undefined,
-          previous: prev ? `previous record v${prev.version} (${prev.hash.slice(0, 10)}…) ${prevOk ? "verified against the archive" : "recorded"} at ${prev.time}` : undefined });
+          chain: meta(rec), changes: diffJson(JSON.parse(rec.content), st.registry.body),
+          previous: prev ? `previous record v${prev.version} (${prev.hash.slice(0, 10)}…), recorded ${prev.time} by ${prev.publisherLabel}` : undefined,
+          forensics: forensicsFor(["/api/demo/declare", "/api/demo/restore"], "registry") });
       } else if (latest && latest.version !== v) findings.push({ subject: `Trust registry v${v}`, ok: false, summary: `stale: the chain is at v${latest.version}`, chain: meta(rec) });
       else findings.push({ subject: `Trust registry v${v}`, ok: true, summary: `matches the record published by ${rec.publisherLabel}`, chain: meta(rec) });
-      // archive integrity (the source of every "previous value")
-      for (const r of snap.registry) { const h = st.history.find((x) => x.body.version === r.version); if (!h || sha256hex(canonical(h.body)) !== r.hash) findings.push({ subject: `Archived registry v${r.version}`, ok: false, summary: "archive copy does not match the chain record" }); }
       // status lists as currently served
       for (const [kid, list] of served) {
         const recs = snap.status[kid] ?? [], last = recs[recs.length - 1], name = `Status list · ${issuerOfKey[kid] ?? kid.slice(0, 8)}`;
         if (!last) { findings.push({ subject: name, ok: false, summary: "no record on the chain" }); continue; }
         const h = sha256hex(canonical(list));
         if (list.version !== last.version) {
-          const pristine = listArchive.get(`${kid}:${last.version}`);
-          findings.push({ subject: name, ok: false, summary: `rolled back: v${list.version} is being served but the issuer published v${last.version}`, chain: meta(last), changes: pristine ? diffStatus(pristine, list) : undefined, previous: `the replayed list v${list.version} is genuine and validly signed, which is why only the chain can expose it` });
-        } else if (h !== last.hash) findings.push({ subject: name, ok: false, summary: "the served list differs from the version the issuer recorded: it was altered", chain: meta(last) });
+          findings.push({ subject: name, ok: false, summary: `rolled back: v${list.version} is being served but the issuer published v${last.version}`, chain: meta(last), changes: diffStatus(JSON.parse(last.content), list),
+            previous: "the replayed list is genuine and validly signed, which is why only the chain can expose it", forensics: forensicsFor(["/api/demo/revoke-license", "/api/demo/reissue", "/api/demo/restore"], "status lists") });
+        } else if (h !== last.hash) findings.push({ subject: name, ok: false, summary: "the served list differs from the version the issuer recorded: it was altered", chain: meta(last), forensics: forensicsFor(["/api/demo/revoke-license", "/api/demo/restore"], "status lists") });
         else findings.push({ subject: name, ok: true, summary: `v${list.version} matches the record published by ${last.publisherLabel}`, chain: meta(last) });
       }
       return { ok: true as const, checkedAt: new Date().toISOString(), findings, clean: findings.every((f) => f.ok) };
     },
-    /** Chain audit feed + readable "what changed", shown only when the archived copy re-hashes to the chain's record. */
-    enrichAudit(audit: import("./chain").AuditEntry[]) {
+    /** Chain audit feed + readable "what changed". The previous and new content both come from the chain (the contract checked sha256(content)==hash). */
+    enrichAudit(snap: import("./chain").ChainSnapshot) {
       const label = (kid?: string) => (kid ? (issuerOfKey[kid] ? `${issuerOfKey[kid]} key` : `key ${kid.slice(0, 8)}…`) : undefined);
-      return audit.map((e) => {
+      return snap.audit.map((e) => {
         let changes: Change[] | undefined;
         const vReg = /^Registry v(\d+)/.exec(e.action), vSt = /^Status list v(\d+)/.exec(e.action);
         if (vReg && Number(vReg[1]) > 1) {
-          const a = st.history.find((h) => h.body.version === Number(vReg[1]) - 1), b = st.history.find((h) => h.body.version === Number(vReg[1]));
-          if (a && b && sha256hex(canonical(a.body)) === e.previous && sha256hex(canonical(b.body)) === e.next) changes = diffJson(a.body, b.body).filter((c) => !/^(version|prevHash|issuedAt|note)$/.test(c.path));
+          const a = snap.registry.find((r) => r.version === Number(vReg[1]) - 1), b = snap.registry.find((r) => r.version === Number(vReg[1]));
+          if (a && b) changes = diffJson(JSON.parse(a.content), JSON.parse(b.content)).filter((c) => !/^(version|prevHash|issuedAt|note)$/.test(c.path));
         } else if (vSt && e.target && Number(vSt[1]) > 1) {
-          const a = listArchive.get(`${e.target}:${Number(vSt[1]) - 1}`), b = listArchive.get(`${e.target}:${vSt[1]}`);
-          if (a && b && sha256hex(canonical(a)) === e.previous && sha256hex(canonical(b)) === e.next) changes = diffStatus(a, b);
+          const recs = snap.status[e.target] ?? [], a = recs.find((r) => r.version === Number(vSt[1]) - 1), b = recs.find((r) => r.version === Number(vSt[1]));
+          if (a && b) changes = diffStatus(JSON.parse(a.content), JSON.parse(b.content));
         }
         return { ...e, targetLabel: label(e.target), changes };
       });
+    },
+    // --- access log: every write attempt, hash-chained, head anchored on the chain ---
+    accessLog: new AccessLog(),
+    async logAccess(e: { actor: string; actorLabel: string; method: string; path: string; bodySha256: string; outcome: "ok" | "denied" | "error"; detail: string }) {
+      const entry = st.accessLog.append({ time: new Date().toISOString(), ...e });
+      if (chain.online) { try { await chain.anchorAuditHead(entry.seq, entry.hash); } catch (err: any) { event("chain", `could not anchor access-log entry #${entry.seq}: ${String(err.message).slice(0, 80)}`); } }
+      return entry;
+    },
+    async verifyAccessLog() {
+      const snap = await chain.snapshot();
+      if (!snap.ok) return { ok: false as const, error: snap.error ?? "chain unreachable" };
+      return { ...st.accessLog.verify(snap.auditHeads), checkedAt: new Date().toISOString() };
+    },
+    /** Demo: someone with file access rewrites an old log line (e.g. to hide who did something). */
+    tamperAccessLog() {
+      const target = st.accessLog.entries.find((e) => e.outcome === "denied") ?? st.accessLog.entries.find((e) => e.actor !== "-") ?? st.accessLog.entries[0];
+      if (!target) throw new Error("the access log is empty");
+      const was = target.actorLabel;
+      target.actor = "0x" + "00".repeat(20); target.actorLabel = "Registry admin"; target.outcome = "ok"; target.detail = "(rewritten)";
+      event("tamper", `someone rewrote access-log entry #${target.seq} (was: ${was}) without being able to change the chain`);
     },
     async declare() {
       if (st.phase === "declared") throw new Error("already declared");
@@ -226,10 +257,12 @@ export async function createState(chain: Chain) {
     await chain.publishRegistry(w.registry, T_REGISTRY, "initial trust registry: 4 issuers, one key each");
     for (const [k, acct] of Object.entries(anchorer)) await chain.authorise(k, acct, T_REGISTRY);
     await syncChain();
+    await chain.setAuditor(ACCOUNT.auditor, T_REGISTRY);
     event("chain", `local chain online: contract ${chain.address.slice(0, 10)}…, registry v1 and ${posted} issuance-log anchors recorded`);
   } else event("chain", "chain unreachable: verifiers will fail closed until it is back (start it with: npm run chain, then Reset demo)");
   for (const id of ["gov-id", "uni-x", "uni-y", "med-board"]) await publishList(id, w.keys[id], "2026-10-01T09:10:00.000Z", "initial status list (no revocations)");
   event("system", "demo world initialised: 4 issuers, registry v1, status lists v1");
+  await st.logAccess({ actor: "-", actorLabel: "(system)", method: "INIT", path: "-", bodySha256: sha256hex("{}"), outcome: "ok", detail: "demo world initialised" });
   return st;
 }
 export type State = Awaited<ReturnType<typeof createState>>;

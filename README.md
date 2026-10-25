@@ -7,8 +7,8 @@ Theme 4 / Problem 3: decentralized portable proofs.
 ```bash
 npm install
 npm run dev          # local chain :8545, API :8787, web http://localhost:5173 (all three, one command)
-npm test             # 45 tests (crypto, ZK, verifier, incident, chain checks, diffs)
-npm run chain:test   # 26 contract checks against the running local chain (resets it)
+npm test             # 56 tests (crypto, ZK, verifier, incident, chain checks, diffs)
+npm run chain:test   # 34 contract checks against the running local chain (resets it)
 npm run e2e          # full incident storyline over HTTP with real proofs (needs `npm run dev` running)
 ```
 `npm start` builds the web app and serves chain + API + UI (UI from :8787). If you only run the API, verifiers fail closed and the Trust page says why.
@@ -28,8 +28,11 @@ The **Security & audit** tab shows the full change history (actor with role, tim
 
 The verifier reads the chain itself and **fails closed** if it cannot. No credentials, names, dates or proofs are on-chain; privacy comes from the zero-knowledge proof.
 
+**Signed writes and an anchored access log.** Privileged API actions (declare a compromise, revoke, re-issue, issue, restore) must carry an EIP-191 signature over the method, path, body hash, a one-time nonce and a timestamp. The server recovers the signer from the signature (it never trusts a claimed identity) and checks it is the registry admin or that issuer's own account. Unsigned, wrong-key, wrong-role, replayed, altered-body and stale requests are refused. Every attempt, accepted or denied, is an entry in a hash-chained access log, and the log's head is anchored on the chain after each entry, so editing, deleting, reordering or truncating history is detected, even by an attacker who recomputes every hash. Registry bodies and status lists are published with their content (the contract checks `sha256(content) == hash`), so the chain itself holds the exact previous value and "Restore" rebuilds from the chain.
+
 Honest limits:
-- **Attribution:** a change made *through the contract* is attributed to an account and time. An edit to stored data *outside* the contract is detected and explained (what changed, what the chain recorded) but the chain cannot name who made it; that needs authenticated access logs on the server. The demo's own control endpoints are unauthenticated.
+- **Attribution:** every write made through the application is attributed to a key. An edit that *bypasses* the application (raw file or database access) cannot carry a signature by definition: the system detects it, shows what changed against the chain, proves no authorised signed write explains it, and bounds it in time by the last intact on-chain anchor. Naming the *person* behind such a raw edit would still need host-level logging. Verifiers are unaffected, because they check the chain, not the server's copy.
+- **Demo shortcuts:** actors sign with the local node's publicly known test keys (`packages/core/signing.ts`), and the server relays each transaction from the node's unlocked accounts after checking the actor's signature. In production every actor holds its own key and submits its own transactions. The demo-harness endpoints that stand for an adversary (steal, tamper, rollback, reset...) are deliberately unsigned, and are logged.
 - "Previous -> new" is readable only because archived copies are kept off-chain; it is shown only when the archive re-hashes to exactly what the chain recorded.
 - It is a local dev chain, not a public network, with one node (no real decentralisation). The demo steers the chain clock (`evm_setNextBlockTimestamp`) to replay a multi-week timeline; the node only allows going forward.
 - The anchoring account must be a separate credential from the signing key. A thief holding both could still anchor inside the window, which the policy then quarantines; the window start must be set correctly.

@@ -1,6 +1,7 @@
 import { type ReactElement, Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { Check, CircleAlert, Eye, Landmark, Lock, Moon, ScrollText, ShieldCheck, Stamp, Sun, TriangleAlert, Wallet as WalletIcon, X } from "lucide-react";
 import { toggleTheme, useTheme } from "./theme";
+import { ROUTE_ROLE, signedPost } from "./signer";
 import { api } from "./api";
 import { proveInBrowser } from "./prove";
 import type { WireCred, WireRequest } from "../../../packages/core/wire";
@@ -230,7 +231,7 @@ function Wallet({ pub }: { pub: any }) {
 
 function Trust({ pub, refresh }: { pub: any; refresh: () => void }) {
   const [err, setErr] = useState("");
-  const act = (path: string, body?: unknown) => async () => { setErr(""); try { await api(path, body ?? {}); await refresh(); } catch (e: any) { setErr(e.message); } };
+  const act = (path: string, body?: unknown) => async () => { setErr(""); try { await (ROUTE_ROLE[path] ? signedPost(path, body ?? {}, ROUTE_ROLE[path]) : api(path, body ?? {})); await refresh(); } catch (e: any) { setErr(e.message); } };
   const s = pub.summary;
   const badge = (st: string) => <span className={"badge " + (st === "active" ? "b-ok" : st === "compromised" ? "b-warn" : "b-bad")}>{st}</span>;
   return (
@@ -291,7 +292,7 @@ function Issue({ pub, refresh }: { pub: any; refresh: () => void }) {
   const type = issuer.credTypes[0], role = type === 1 ? "id" : type === 2 ? "degree" : "license";
   async function go() {
     setErr(""); setOut(null);
-    try { setOut(await api("/api/issue", { issuerId, type, profile, holderId: w.creds[0].fields.holderId, a1, a2: type === 1 ? "0" : a2, name: pname, address: paddr, label: `${({ id: "National ID", degree: "Degree", license: "License" } as any)[role]} (issued ${new Date().toLocaleTimeString()})` })); await refresh(); }
+    try { setOut(await signedPost("/api/issue", { issuerId, type, profile, holderId: w.creds[0].fields.holderId, a1, a2: type === 1 ? "0" : a2, name: pname, address: paddr, label: `${({ id: "National ID", degree: "Degree", license: "License" } as any)[role]} (issued ${new Date().toLocaleTimeString()})` }, issuerId as any)); await refresh(); }
     catch (e: any) { setErr(e.message); }
   }
   return (
@@ -343,7 +344,8 @@ function Audit({ pub, refresh }: { pub: any; refresh: () => void }) {
             <li><strong>Simulated:</strong> issuers and key custody run in one demo server, and the blockchain is a local development chain (Hardhat), not a public network. Its clock is steered to replay the demo timeline.</li>
             <li><strong>Centralized:</strong> registry and status-list hosting, and the one local chain node. Registry versions are signed and their hashes are on the chain, so tampering is detectable, but the demo itself is not a decentralized network.</li>
             <li><strong>Dev-only:</strong> the trusted setup has a single local contribution. A real deployment needs a multi-party ceremony.</li>
-            <li><strong>Attribution limit:</strong> a change made through the contract is attributed to an account and time. An edit to stored data <em>outside</em> the contract is detected and explained (what changed, what the chain recorded), but the chain cannot name who made it; that needs authenticated access logs on the server.</li>
+            <li><strong>Attribution:</strong> every write made through the application must be signed by an authorised account, and is recorded with who, when and the previous value; refused attempts are recorded too, and the access log is anchored on the chain so it cannot be quietly rewritten. An edit that <em>bypasses</em> the application (raw file or database access) cannot carry a signature by definition: the system detects it, shows what changed against the chain, proves no authorised signed write explains it, and bounds it in time by the last intact anchor. Naming the person behind such a raw edit would still need host-level logging. Verifiers are unaffected, because they check the chain, not the server's copy.</li>
+            <li><strong>Demo shortcuts:</strong> actors sign with the local node's publicly known test keys, and the server relays each transaction from the node's unlocked accounts after checking the actor's signature. In production every actor holds its own key and submits its own transactions, which removes that trust in the server.</li>
             <li><strong>Leaks by design:</strong> issuer identity, revocation slot index and which notarized log root. Whole status lists are downloaded, so issuers do not learn which credential was checked.</li>
           </ul></div>
       </div>
@@ -394,7 +396,7 @@ function ChangeHistory({ pub, refresh }: { pub: any; refresh: () => void }) {
   const check = useCallback(async () => { setErr(""); try { setReport(await api("/api/integrity")); } catch (e: any) { setErr(e.message); } }, []);
   const run = (label: string, path: string, then: "check" | "none" = "check") => async () => {
     setErr(""); setBusy(label);
-    try { await api(path, {}); await refresh(); if (then === "check") await check(); } catch (e: any) { setErr(e.message); } finally { setBusy(""); }
+    try { await (ROUTE_ROLE[path] ? signedPost(path, {}, ROUTE_ROLE[path]) : api(path, {})); await refresh(); if (then === "check") await check(); } catch (e: any) { setErr(e.message); } finally { setBusy(""); }
   };
   return (
     <>
@@ -418,12 +420,23 @@ function ChangeHistory({ pub, refresh }: { pub: any; refresh: () => void }) {
         <div className="card"><h2>Try to break it</h2>
           <p className="small muted" style={{ marginTop: 0 }}>Each action is something an attacker might do. Then see what the system recorded or detected.</p>
           <div className="row">
-            <button className="btn ghost small" disabled={!!busy} onClick={run("attempt", "/api/demo/attempt-unauthorised", "none")}>Outsider tries to change data</button>
+            <button className="btn ghost small" disabled={!!busy} onClick={async () => {
+              setErr(""); setBusy("attempt");
+              try {
+                await api("/api/demo/attempt-unauthorised", {}); // writes straight to the chain from an unknown account
+                // ...and the API: unsigned, a stranger's key, and a real account acting outside its role. Each must be refused and logged.
+                await signedPost("/api/demo/declare", {}, null).catch(() => undefined);
+                await signedPost("/api/demo/declare", {}, "stranger").catch(() => undefined);
+                await signedPost("/api/demo/declare", {}, "med-board").catch(() => undefined);
+                await refresh();
+              } catch (e: any) { setErr(e.message); } finally { setBusy(""); }
+            }}>Outsider tries to change data</button>
             <button className="btn ghost small" disabled={!!busy} onClick={run("tamper", "/api/demo/tamper-registry")}>Edit the stored registry</button>
             <button className="btn ghost small" disabled={!!busy} onClick={run("replay", "/api/demo/rollback-status")}>Replay an old revocation list</button>
-            <button className="btn ghost small" disabled={!!busy} onClick={run("restore", "/api/demo/restore")}>Restore from verified archive</button>
+            <button className="btn ghost small" disabled={!!busy} onClick={run("log", "/api/demo/tamper-log", "none")}>Rewrite an access-log entry</button>
+            <button className="btn ghost small" disabled={!!busy} onClick={run("restore", "/api/demo/restore")}>Restore from the chain</button>
           </div>
-          <p className="small muted mt">Replaying a list needs a revocation to exist first (Trust tab → Revoke Alice's license). Verify tab → generate a proof afterwards to see the verifier refuse tampered data.</p>
+          <p className="small muted mt">Replaying a list needs a revocation to exist first (Trust tab → Revoke Alice's license). Restore is itself a signed action by the registry admin. Verify tab → generate a proof afterwards to see the verifier refuse tampered data.</p>
           {err && <p className="err" role="alert">{err}</p>}
         </div>
         <div className="card"><h2>Integrity check</h2>
@@ -436,9 +449,47 @@ function ChangeHistory({ pub, refresh }: { pub: any; refresh: () => void }) {
               {f.chain && <div className="muted">chain: {f.chain.by}, {String(f.chain.at).slice(0, 19).replace("T", " ")}{f.chain.block !== undefined && <> · block #{f.chain.block}</>}</div>}
               {f.changes?.map((c: any, j: number) => <div key={j} className="mono" style={{ marginLeft: 12 }}>{c.path}: {clip(c.from, 36)} → {clip(c.to, 36)}</div>)}
               {f.previous && <div className="muted">{f.previous}</div>}
+              {f.forensics?.length > 0 && <div className="small" style={{ marginTop: 6, paddingLeft: 10, borderLeft: "2px solid var(--line-strong)" }}>{f.forensics.map((x: string, j: number) => <div key={j}>{x}</div>)}</div>}
             </li>))}</ul>}
         </div>
       </div>
+      <AccessLogPanel pub={pub} />
     </>
+  );
+}
+
+function AccessLogPanel({ pub }: { pub: any }) {
+  const [report, setReport] = useState<any>(null);
+  const [err, setErr] = useState("");
+  const log: any[] = pub.accessLog ?? [];
+  const heads = new Map<number, any>((pub.chain?.auditHeads ?? []).map((h: any) => [h.seq, h]));
+  const verify = async () => { setErr(""); try { setReport(await api("/api/access-log/verify")); } catch (e: any) { setErr(e.message); } };
+  const tone = (o: string) => (o === "ok" ? "b-ok" : o === "denied" ? "b-bad" : "b-warn");
+  return (
+    <div className="card mt"><h2>Access log</h2>
+      <p className="small muted" style={{ marginTop: 0 }}>Every write attempt, accepted or refused, is an entry that includes the hash of the one before it. After each entry the server anchors the log's head on the chain, so history cannot be rewritten without contradicting a record nobody on the server can edit. Privileged actions must be signed by an authorised account; the signer is recovered from the signature, never taken from the request.</p>
+      <div className="row"><button className="btn small" onClick={verify}>Verify the log against the chain</button>
+        {report && !report.error && <span className={"badge " + (report.ok ? "b-ok" : "b-bad")}>{report.ok ? `intact · ${report.entries} entries, ${report.anchored} anchored` : "tampering detected"}</span>}</div>
+      {err && <p className="err" role="alert">{err}</p>}
+      {report?.error && <p className="err" role="alert">{report.error}</p>}
+      {report && report.ok === false && !report.error && (
+        <div className="small mt">
+          {report.problems.map((p: any, i: number) => (
+            <div key={i} style={{ margin: "8px 0" }}><span className="bad"><X size={13} aria-hidden /></span> <strong>Entry #{p.seq}</strong>: {p.detail}.
+              {p.anchor && <span className="muted"> Anchored in block #{p.anchor.block} at {p.anchor.time.slice(0, 19).replace("T", " ")} (tx {short(p.anchor.tx)}).</span>}</div>))}
+          <div className="muted">First altered entry: #{report.firstBad}. {report.lastGoodAnchor ? `Last entry proven intact: #${report.lastGoodAnchor.seq}, anchored in block #${report.lastGoodAnchor.block} at ${report.lastGoodAnchor.time.slice(0, 19).replace("T", " ")}. The tampering happened after that moment.` : "No earlier entry could be proven intact."}</div>
+        </div>)}
+      <div className="tablewrap mt"><table>
+        <thead><tr><th>#</th><th>Server time</th><th>Who</th><th>What</th><th>Result</th><th>Anchored</th></tr></thead>
+        <tbody>{log.map((e) => (
+          <tr key={e.seq} className={e.outcome === "denied" ? "row-rejected" : undefined}>
+            <td className="mono">{e.seq}</td><td className="mono">{e.time.slice(11, 19)}</td>
+            <td><div>{e.actorLabel}</div>{e.actor !== "-" && <div className="mono muted">{short(e.actor)}</div>}</td>
+            <td className="small">{e.detail}</td>
+            <td><span className={"badge " + tone(e.outcome)}>{e.outcome === "ok" ? "accepted" : e.outcome}</span></td>
+            <td className="mono">{heads.get(e.seq) ? `#${heads.get(e.seq).blockNumber}` : "-"}</td>
+          </tr>))}</tbody></table></div>
+      <p className="small muted mt">Server time is the real clock; block numbers belong to the demo chain, whose clock is simulated.</p>
+    </div>
   );
 }
