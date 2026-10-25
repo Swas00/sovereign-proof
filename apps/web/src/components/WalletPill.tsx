@@ -80,7 +80,9 @@ export default function WalletPill() {
                 <ul className="clean">
                   {w.info?.roles.map((r) => (
                     <li key={r.role} className="wp-role"><span><strong>{r.role}</strong> <span className="muted mono">{shortAddr(r.address)}</span></span>
-                      <button type="button" className="btn ghost small" onClick={() => copy(r.role, DEMO_KEYS[r.role] ?? "")}>{copied === r.role ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}{copied === r.role ? "Copied" : "Copy key"}</button></li>
+                      {DEMO_KEYS[r.role]
+                        ? <button type="button" className="btn ghost small" onClick={() => copy(r.role, DEMO_KEYS[r.role])}>{copied === r.role ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}{copied === r.role ? "Copied" : "Copy key"}</button>
+                        : <span className="small muted">server only</span>}</li>
                   ))}
                 </ul>
               </details>
