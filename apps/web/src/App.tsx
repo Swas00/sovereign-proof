@@ -124,10 +124,11 @@ function Verify({ pub, refresh }: { pub: any; refresh: () => void }) {
           <select id="prof" value={profile} onChange={(e) => { setProfile(e.target.value); setPick({}); setRes(null); }}>
             <option value="alice">Alice (legitimate holder)</option><option value="mallory">Mallory (fake degree from stolen key)</option>
           </select>
-          {byRole.degree.length > 1 && (<><label htmlFor="degpick">Degree credential to present</label>
-            <select id="degpick" value={pick.degree ?? byRole.degree.length - 1} onChange={(e) => setPick({ ...pick, degree: Number(e.target.value) })}>
-              {byRole.degree.map((d, i) => <option key={i} value={i}>{d.label}</option>)}
-            </select></>)}
+          {(["id", "degree", "license"] as const).filter((r) => byRole[r].length > 1).map((r) => (
+            <div key={r}><label htmlFor={"pick-" + r}>Which {r} credential to present</label>
+              <select id={"pick-" + r} value={pick[r] ?? byRole[r].length - 1} onChange={(e) => setPick({ ...pick, [r]: Number(e.target.value) })}>
+                {byRole[r].map((d, i) => <option key={i} value={i}>{d.label}</option>)}
+              </select></div>))}
           <div className="mt cols">
             <div><h3>Proved, not disclosed</h3><ul className="clean small"><li>Holds the {degLabel}</li><li>Older than {req?.ageYears ?? age}</li><li>{licLabel} active today</li><li>All three belong to the same person</li></ul></div>
             <div><h3>Never leaves this device</h3><ul className="clean small"><li>Name, date of birth, address</li><li>Graduation date, license expiry</li><li>Holder secret and signatures</li></ul></div>
@@ -240,13 +241,14 @@ function Issue({ pub, refresh }: { pub: any; refresh: () => void }) {
   const [profile, setProfile] = useState("alice");
   const w = useWallet(profile, pub.phase);
   const [issuerId, setIssuerId] = useState("uni-x");
+  const DEFAULTS: Record<number, [string, string]> = { 1: ["19900101", "0"], 2: ["555", "20240601"], 3: ["77", "20300101"] };
   const [a1, setA1] = useState("555"); const [a2, setA2] = useState("20240601");
   const [out, setOut] = useState<any>(null); const [err, setErr] = useState("");
   const issuer = pub.registry.body.issuers.find((i: any) => i.issuerId === issuerId);
   const type = issuer.credTypes[0], role = type === 1 ? "id" : type === 2 ? "degree" : "license";
   async function go() {
     setErr(""); setOut(null);
-    try { setOut(await api("/api/issue", { issuerId, type, holderId: w.creds[0].fields.holderId, a1, a2: type === 1 ? "0" : a2, label: `${role} (issued in this session)` })); await refresh(); }
+    try { setOut(await api("/api/issue", { issuerId, type, profile, holderId: w.creds[0].fields.holderId, a1, a2: type === 1 ? "0" : a2, label: `${({ id: "National ID", degree: "Degree", license: "License" } as any)[role]} (issued ${new Date().toLocaleTimeString()})` })); await refresh(); }
     catch (e: any) { setErr(e.message); }
   }
   return (
@@ -255,7 +257,10 @@ function Issue({ pub, refresh }: { pub: any; refresh: () => void }) {
       <p className="lead">The issuer signs a salted commitment to the claims, logs the commitment, and the notary timestamps the log. The issuer receives only the holder's pseudonymous id, never the holder secret.</p>
       <div className="grid g2"><div className="card">
         <label htmlFor="is">Issuer</label>
-        <select id="is" value={issuerId} onChange={(e) => { setIssuerId(e.target.value); setOut(null); }}>
+        <select id="is" value={issuerId} onChange={(e) => {
+          const t = pub.registry.body.issuers.find((i: any) => i.issuerId === e.target.value).credTypes[0];
+          setIssuerId(e.target.value); setOut(null); setErr(""); setA1(DEFAULTS[t][0]); setA2(DEFAULTS[t][1]);
+        }}>
           {pub.registry.body.issuers.map((i: any) => <option key={i.issuerId} value={i.issuerId}>{i.name} ({i.issuerId})</option>)}
         </select>
         <label htmlFor="who">Holder</label>
@@ -268,7 +273,7 @@ function Issue({ pub, refresh }: { pub: any; refresh: () => void }) {
         {pub.phase === "stolen" && <p className="small warn mt">The compromise has not been declared yet. A genuine issuance now is timestamped inside the theft window, so the recovery policy would quarantine it until re-attested.</p>}
       </div>
       <div className="card"><h2>Result</h2>{out ? <CredCard c={out} /> : <p className="muted small">Nothing issued yet.</p>}
-        {out && <p className="small muted">Added to the notary-anchored log. Use it from the Verify tab after switching to a wallet that holds all three types.</p>}</div></div>
+        {out && <p className="small muted">Added to the issuer's log, timestamped by the notary, and stored in {profile === "alice" ? "Alice" : "Mallory"}'s wallet (see the Wallet tab). If it is a second credential of a type the wallet already holds, choose it in the Verify tab's credential picker.</p>}</div></div>
     </>
   );
 }

@@ -67,7 +67,11 @@ app.post("/api/issue", wrap((q, r) => {
   const cred = { fields, sig: w.c.sign(activeKey.prv, m), issuerPub: activeKey.pub, merkle: log.pathAt(index, anchor.leafCount) };
   const role = type === 1 ? "id" : type === 2 ? "degree" : "license";
   st.event("issuer", `${issuer.issuerId} issued a ${role} credential (anchored ${anchor.anchoredAt}); no holder identity recorded`);
-  r.json(credToWire(role, String(q.body.label ?? role), issuer.issuerId, rootFromPath(w.c, m, cred.merkle), cred));
+  const wire = credToWire(role, String(q.body.label ?? role).slice(0, 80), issuer.issuerId, rootFromPath(w.c, m, cred.merkle), cred);
+  // Hand the credential to the holder's wallet only if the supplied holderId really is that wallet's id.
+  const wallet = st.wallets[String(q.body.profile ?? "")];
+  if (wallet && wallet.creds[0]?.fields.holderId === holderId.toString()) wallet.creds.push(wire);
+  r.json(wire);
 }));
 
 // Verifier role. The server remembers the requests IT issued, so a client cannot weaken the policy.
