@@ -6,6 +6,6 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   define: { global: "globalThis" },
-  server: { port: 5173, proxy: { "/api": "http://localhost:8787", "/artifacts": "http://localhost:8787" }, fs: { allow: ["../.."] } },
+  server: { port: 5173, proxy: { "/api": "http://127.0.0.1:8787", "/artifacts": "http://127.0.0.1:8787" }, fs: { allow: ["../.."] } },
   build: { target: "es2022" },
 });

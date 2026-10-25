@@ -182,4 +182,7 @@ if (existsSync(dist)) {
     else if (/[\\/]hero[\\/]/.test(path)) res.setHeader("Cache-Control", "public, max-age=86400");
   } }));
 }
-app.listen(PORT, () => console.log(`Sovereign Proof API on http://localhost:${PORT}`));
+// Loopback by default: the demo controls (reset, simulated theft, faucet) take no signature, so they must not be reachable from the
+// venue network. To test from a phone on the same Wi-Fi, start with HOST=0.0.0.0 and stop it again afterwards.
+const HOST = process.env.HOST ?? "127.0.0.1";
+app.listen(PORT, HOST, () => console.log(`Sovereign Proof API on http://localhost:${PORT}` + (HOST === "127.0.0.1" ? " (this computer only)" : ` (listening on ${HOST}: reachable from the network)`)));
