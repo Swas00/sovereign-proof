@@ -71,9 +71,9 @@ export async function buildWorld() {
   const creds = { id: present(legacy.id, aId), degree: present(legacy.degree, aDeg), license: present(legacy.license, aLic) };
 
   /** The attacker holds uni-x's real signing key and runs their own log; the notary timestamps it during the window. */
-  const fraudDegree = (): SignedCredential => {
+  const fraudDegree = (secret = holderSecret, idx = 9n): SignedCredential => {
     const attackerLog = new IssuanceLog(c, DEPTH);
-    const i = issue("uni-x", CRED_TYPE.DEGREE, CODES.CS_DEGREE, 20180601n, 9n, 99n, { key: keys["uni-x"], log: attackerLog });
+    const i = issue("uni-x", CRED_TYPE.DEGREE, CODES.CS_DEGREE, 20180601n, idx, 99n, { key: keys["uni-x"], log: attackerLog, secret });
     return present(i, anchorLog(keys["uni-x"], attackerLog, T_FRAUD));
   };
 

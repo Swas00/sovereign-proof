@@ -50,3 +50,10 @@ export function verifyPath(c: Crypto, leaf: bigint, p: MerklePath, root: bigint)
   for (let d = 0; d < p.siblings.length; d++) cur = p.indices[d] ? c.hash([p.siblings[d], cur]) : c.hash([cur, p.siblings[d]]);
   return cur === root;
 }
+
+/** Recompute the root a (leaf, path) pair implies; used to show which notarized root a stored credential belongs to. */
+export function rootFromPath(c: Crypto, leaf: bigint, p: MerklePath): bigint {
+  let cur = leaf;
+  for (let d = 0; d < p.siblings.length; d++) cur = p.indices[d] ? c.hash([p.siblings[d], cur]) : c.hash([cur, p.siblings[d]]);
+  return cur;
+}

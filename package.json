@@ -4,21 +4,32 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "server": "tsx packages/server/index.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
+    "vite": "^8.3.5",
     "vitest": "^5.0.5"
   },
   "dependencies": {
     "circom2": "^0.2.23",
     "circomlib": "^2.0.5",
     "circomlibjs": "^0.1.7",
+    "express": "^5.3.0",
     "snarkjs": "^0.7.6"
   }
 }
