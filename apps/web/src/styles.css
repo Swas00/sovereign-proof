@@ -18,9 +18,9 @@ body{background:var(--bg);color:var(--text);font:15px/1.5 var(--sans);-webkit-fo
 header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:18px 0;border-bottom:1px solid var(--line);margin-bottom:22px}
 .brand{font-weight:700;font-size:18px;letter-spacing:.2px;display:flex;align-items:center;gap:10px}
 .logo{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--info));display:grid;place-items:center;color:var(--accent-ink);font-size:14px}
-nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
-nav button{background:none;border:1px solid transparent;color:var(--muted);padding:8px 14px;border-radius:10px;font:inherit;cursor:pointer}
-nav button:hover{color:var(--text)} nav button[aria-current=page]{color:var(--text);background:var(--panel);border-color:var(--line)}
+header nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+header nav button{background:none;border:1px solid transparent;color:var(--muted);padding:8px 14px;border-radius:10px;font:inherit;cursor:pointer}
+header nav button:hover{color:var(--text)} header nav button[aria-current=page]{color:var(--text);background:var(--panel);border-color:var(--line)}
 .phase{font-size:12px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
 h1{font-size:26px;margin:0 0 6px} h2{font-size:17px;margin:0 0 12px} h3{font-size:14px;margin:0 0 8px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.6px}
 p.lead{color:var(--muted);margin:0 0 22px;max-width:760px}

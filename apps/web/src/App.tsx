@@ -1,25 +1,42 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { proveInBrowser } from "./prove";
 import type { WireCred, WireRequest } from "../../../packages/core/wire";
 
 type Tab = "verify" | "wallet" | "trust" | "issue" | "audit";
+const TABS: Tab[] = ["verify", "wallet", "trust", "issue", "audit"];
+const Landing = lazy(() => import("./Landing"));
+// "#app" or "#app/<tab>" opens the application; anything else shows the landing page.
+function readRoute(): { view: "landing" | "app"; tab?: Tab } {
+  const h = window.location.hash;
+  if (!h.startsWith("#app")) return { view: "landing" };
+  const t = h.split("/")[1] as Tab | undefined;
+  return { view: "app", tab: t && TABS.includes(t) ? t : undefined };
+}
 const ICON: Record<string, string> = { pass: "✓", fail: "✕", quarantine: "⚠", warn: "!" };
 const CLS: Record<string, string> = { pass: "ok", fail: "bad", quarantine: "warn", warn: "warn" };
 const fmtDate = (n: string) => (n === "0" ? "-" : `${n.slice(0, 4)}-${n.slice(4, 6)}-${n.slice(6, 8)}`);
 const short = (s: string) => `${s.slice(0, 8)}…${s.slice(-4)}`;
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("verify");
+  const [route, setRoute] = useState(readRoute);
+  useEffect(() => {
+    const on = () => setRoute(readRoute());
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
+  const [tab, setTab] = useState<Tab>(route.tab ?? "verify");
+  useEffect(() => { if (route.tab) setTab(route.tab); }, [route]);
   const [pub, setPub] = useState<any>(null);
   const [error, setError] = useState("");
   const refresh = useCallback(() => api("/api/public").then(setPub).catch((e) => setError(e.message)), []);
   useEffect(() => { refresh(); }, [refresh]);
   const phaseLabel = pub ? ({ normal: "Normal operation", stolen: "Key stolen (undetected)", declared: "Compromise declared" } as any)[pub.phase] : "";
+  if (route.view === "landing") return <Suspense fallback={null}><Landing /></Suspense>;
   return (
     <div className="wrap">
       <header>
-        <div className="brand"><span className="logo">◆</span> Sovereign Proof</div>
+        <div className="brand"><a href="#" aria-label="Sovereign Proof overview" style={{ color: "inherit", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 10 }}><span className="logo">◆</span> Sovereign Proof</a></div>
         {pub && <span className="phase" aria-live="polite">Registry v{pub.registry.body.version} · {phaseLabel}</span>}
         <nav aria-label="Main">
           {([["verify", "Verify"], ["wallet", "Wallet"], ["trust", "Trust & incident"], ["issue", "Issue"], ["audit", "Audit"]] as const).map(([k, l]) => (
