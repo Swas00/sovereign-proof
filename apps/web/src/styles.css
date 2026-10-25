@@ -443,3 +443,11 @@ img,svg,canvas,video{max-width:100%}
 .actingas[data-state=norole]{border-left-color:var(--warn)} .actingas[data-state=norole] svg{color:var(--warn)}
 .linkbtn{background:none;border:0;padding:0;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}
 @media (pointer:coarse){.linkbtn{min-height:44px;padding:0 6px}}
+
+/* Wallet checklist */
+.wsteps{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:12px}
+.wsteps li{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:4px;background:var(--surface)}
+.wsteps li[data-next=true]{border-color:var(--accent);background:var(--accent-soft)}
+.wsteps li[data-done=true]{opacity:.78}
+.wnum{flex:none;display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1px solid var(--control);font:500 12px var(--mono)}
+.wsteps li[data-done=true] .wnum{background:var(--ok);border-color:var(--ok);color:var(--bg)}

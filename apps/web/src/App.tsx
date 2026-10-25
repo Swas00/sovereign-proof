@@ -5,6 +5,7 @@ import { ROUTE_ROLE, signedPost } from "./signer";
 import WaveMesh from "@/components/ui/wave-mesh";
 import WalletPill from "@/components/WalletPill";
 import ActingAs from "@/components/ActingAs";
+import WalletGuide from "@/components/WalletGuide";
 import { anchorReceipt, connect, friendlyError, getWallet, shortAddr, useWalletState } from "./wallet";
 import { receiptText } from "../../../packages/core/receipt";
 import { api } from "./api";
@@ -385,6 +386,7 @@ function Audit({ pub, refresh }: { pub: any; refresh: () => void }) {
       <h1>Security &amp; <em>audit</em></h1>
       <p className="lead">Every change to the trust data is written to the chain with who made it, when, and the previous value. Refused attempts are recorded too. Each verification also leaves one record of public material only: a verdict, per-step outcomes and issuer ids.</p>
       <ActingAs />
+      <WalletGuide pub={pub} />
       <ChangeHistory pub={pub} refresh={refresh} />
       <div className="grid g2 mt">
         <div className="card"><h2>Verification log</h2>
