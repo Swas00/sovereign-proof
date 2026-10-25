@@ -71,11 +71,13 @@ export default function App() {
             <button key={k} aria-current={tab === k ? "page" : undefined} onClick={() => setTab(k)}>{NAV_ICON[k]}{l}</button>
           ))}
         </nav>
-        <WalletPill />
-        <button type="button" className="themebtn" onClick={toggleTheme} title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-          aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>
-          {theme === "dark" ? <Sun size={16} strokeWidth={1.8} aria-hidden /> : <Moon size={16} strokeWidth={1.8} aria-hidden />}
-        </button>
+        <div className="hactions">
+          <WalletPill />
+          <button type="button" className="themebtn" onClick={toggleTheme} title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>
+            {theme === "dark" ? <Sun size={16} strokeWidth={1.8} aria-hidden /> : <Moon size={16} strokeWidth={1.8} aria-hidden />}
+          </button>
+        </div>
         <div className="mast-rule" aria-hidden="true" />
       </header>
       {error && <p className="err" role="alert">{error}</p>}

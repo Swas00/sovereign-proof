@@ -460,3 +460,7 @@ img,svg,canvas,video{max-width:100%}
 .wp-safe,.wp-unsafe{margin:0 0 12px;padding:9px 11px;border-radius:4px;border:1px solid;font-size:13px}
 .wp-safe{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 55%,transparent);background:color-mix(in srgb,var(--ok) 9%,transparent)}
 .wp-unsafe{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 55%,transparent);background:color-mix(in srgb,var(--bad) 9%,transparent)}
+
+/* wallet and theme buttons stay together; when they wrap to their own row they sit at the right */
+.hactions{display:flex;align-items:center;gap:6px}
+@media (max-width:1180px){.hactions{margin-left:auto}}
