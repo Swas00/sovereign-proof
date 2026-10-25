@@ -146,17 +146,19 @@ export class Chain {
 
   /** Reads everything a verifier needs straight from the node (not from our API state). Cached for one second. */
   async snapshot(): Promise<ChainSnapshot> {
-    const base: ChainSnapshot = { ok: false, network: "Hardhat local chain (31337)", rpc: RPC_URL, contract: this.address, blockNumber: 0, registry: [], anchors: [], status: {}, audit: [], auditHeads: [] };
+    const base: ChainSnapshot = { ok: false, network: "Hardhat local chain (31337)", rpc: RPC_URL, contract: this.address, blockNumber: 0, registry: [], anchors: [], receipts: [], status: {}, audit: [], auditHeads: [] };
     if (this.forceOffline) return { ...base, error: "chain unreachable (simulated outage)" };
     if (!this.contract) return { ...base, error: this.online ? "contract not deployed yet" : this.error || "chain unreachable" };
-    if (this.cache && Date.now() - this.cache.at < 1000) return this.cache.snap;
     try {
       // Pin every read to the head block the node reports (ethers resolves "latest" from a cached block number).
       const head = await this.provider.send("eth_getBlockByNumber", ["latest", false]);
       const tip = parseInt(head.number, 16);
+      // Reuse the last read only while the chain has not moved: a wallet can write straight to the chain, bypassing this server.
+      if (this.cache && this.cache.snap.blockNumber === tip) return this.cache.snap;
       const raw = await this.provider.getLogs({ address: this.address, fromBlock: 0, toBlock: tip });
       const events = raw.map((l) => ({ l, p: this.contract!.interface.parseLog({ topics: [...l.topics], data: l.data }) })).filter((e) => e.p)
         .sort((a, b) => a.l.blockNumber - b.l.blockNumber || a.l.index - b.l.index);
+      const receipts: Receipt[] = [];
       const registry: ChainRegistryRecord[] = [], anchors: Anchor[] = [], audit: AuditEntry[] = [], auditHeads: AuditHead[] = [];
       const status: Record<string, ChainStatusRecord[]> = {};
       const keyHex = (b: string) => dec(b);
