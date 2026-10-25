@@ -33,7 +33,13 @@ export async function signedPost<T = any>(path: string, body: unknown, role: Act
   }
   const r = await fetch(path, { method: "POST", headers, body: JSON.stringify(payload) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw Object.assign(new Error(j.error ?? `request failed (${r.status})`), { status: r.status });
+  if (!r.ok) {
+    let message: string = j.error ?? `request failed (${r.status})`;
+    const w = getWallet();
+    if (r.status === 403 && role && !scripted && w.signWith === "wallet" && w.account)
+      message += `. Your wallet signed this, so it needs the "${role}" role: import that demo key into MetaMask (wallet panel, Act as a demo role), or choose Demo keys in the wallet panel.`;
+    throw Object.assign(new Error(message), { status: r.status });
+  }
   return j;
 }
 
