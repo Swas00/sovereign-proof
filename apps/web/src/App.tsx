@@ -26,7 +26,7 @@ const NAV_ICON: Record<Tab, ReactElement> = {
 // Two overlapping rings: what a proof discloses is only the overlap.
 const Mark = () => (
   <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
-    <circle cx="9.5" cy="13" r="7" stroke="currentColor" strokeWidth="1.6" /><circle cx="16.5" cy="13" r="7" stroke="currentColor" strokeWidth="1.6" />
+    <circle className="ring-a" cx="9.5" cy="13" r="7" stroke="currentColor" strokeWidth="1.6" /><circle className="ring-b" cx="16.5" cy="13" r="7" stroke="currentColor" strokeWidth="1.6" />
   </svg>
 );
 const CLS: Record<string, string> = { pass: "ok", fail: "bad", quarantine: "warn", warn: "warn" };
