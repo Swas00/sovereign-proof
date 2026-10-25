@@ -1,9 +1,13 @@
 import SculptureHero from "@/components/ui/liquid-sculpture-hero";
 import InkOrbitFeatures from "@/components/ui/ink-orbit-features";
+import { liveFeatureProps, usePublicState } from "./liveFeatures";
 
 const prefersDark = typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
 
 export default function Landing() {
+  // live data from the running API; null (unreachable) falls back to the static copy below
+  const pub = usePublicState();
+  const live = pub ? liveFeatureProps(pub) : null;
   return (
     <>
       <SculptureHero
@@ -39,7 +43,7 @@ export default function Landing() {
         <InkOrbitFeatures
           theme="auto"
           brand="Sovereign Proof"
-          tag="How it works"
+          tag={live?.tag ?? "How it works"}
           title={"Prove the *claim,*\nnot the person."}
           collaboration={{
             title: "Issue once, verify anywhere",
@@ -52,14 +56,18 @@ export default function Landing() {
           integrations={{
             title: "Four public, signed sources",
             description: "Trust registry, notary anchors, issuer logs and status lists. A verifier needs nothing else, and none of it names a holder.",
-            tools: ["Registry", "Notary", "Issuer log", "Status list"],
+            tools: live?.integrations.tools ?? ["Registry", "Notary", "Issuer log", "Status list"],
+            status: live?.integrations.status,
           }}
-          insights={{
-            title: "Incident-aware trust",
-            description: "When a university's key is stolen, credentials anchored before the theft window stay valid, and anything issued inside it is quarantined.",
-            values: [8, 12, 15, 19, 22, 26, 29, 31, 33, 38, 41, 45],
-            forecastFrom: 8,
-          }}
+          insights={
+            live?.insights ?? {
+              title: "Incident-aware trust",
+              description: "When a university's key is stolen, credentials anchored before the theft window stay valid, and anything issued inside it is quarantined.",
+              values: [8, 12, 15, 19, 22, 26, 29, 31, 33, 38, 41, 45],
+              forecastFrom: 8,
+            }
+          }
+          flow={live?.flow}
         />
       </div>
     </>

@@ -16,8 +16,24 @@ export type InkFeatures = {
   title: string
   collaboration: InkFeatureCopy
   reports: InkFeatureCopy
-  integrations: InkFeatureCopy & { tools: string[] }
-  insights: InkFeatureCopy & { values: number[]; forecastFrom: number }
+  integrations: InkFeatureCopy & { tools: string[]; /** idle caption under the hub (default "4 connected") */ status?: string }
+  insights: InkFeatureCopy & {
+    values: number[]
+    forecastFrom: number
+    /** one tooltip per point; replaces the default "anchored"/"quarantined" */
+    labels?: string[]
+    /** caption of the dashed marker; an empty string hides the marker */
+    splitLabel?: string
+  }
+}
+/** Live labels for the flow diagram. All optional. */
+export type InkFlow = {
+  /** tooltips for the five people around the hub */
+  people?: string[]
+  /** text printed on the front sheet */
+  sheetLabel?: string
+  /** changes whenever a new sheet should print; when set, the built-in timer is off */
+  tick?: string | number
 }
 
 export type InkOrbitFeaturesProps = {
@@ -31,6 +47,7 @@ export type InkOrbitFeaturesProps = {
   reports?: { [K in keyof InkFeatureCopy]?: InkFeatureCopy[K] }
   integrations?: { [K in keyof InkFeatures["integrations"]]?: InkFeatures["integrations"][K] }
   insights?: { [K in keyof InkFeatures["insights"]]?: InkFeatures["insights"][K] }
+  flow?: InkFlow
   className?: string
   style?: React.CSSProperties
 }
@@ -123,6 +140,7 @@ export default function InkOrbitFeatures({
   reports,
   integrations,
   insights,
+  flow,
   className = "",
   style,
 }: InkOrbitFeaturesProps) {
@@ -171,7 +189,7 @@ export default function InkOrbitFeatures({
               <Title text={F.title} />
             </div>
             <div className="ib-bento">
-              <FlowCard brand={brand} features={F} uid={uid} reduced={reduced} inView={featIn} />
+              <FlowCard brand={brand} features={F} uid={uid} reduced={reduced} inView={featIn} flow={flow} />
               <IntegrationsCard copy={F.integrations} reduced={reduced} />
               <InsightsCard copy={F.insights} uid={uid} reduced={reduced} />
             </div>
@@ -327,20 +345,21 @@ function ToolGlyph({ index }: { index: number }) {
   )
 }
 
-function FlowCard({ brand, features, uid, reduced, inView }: { brand: string; features: InkFeatures; uid: string; reduced: boolean; inView: boolean }) {
+function FlowCard({ brand, features, uid, reduced, inView, flow }: { brand: string; features: InkFeatures; uid: string; reduced: boolean; inView: boolean; flow?: InkFlow }) {
   const [reports, setReports] = React.useState(128)
   const [side, setSide] = React.useState("" as "" | "left" | "right")
   React.useEffect(() => {
-    if (reduced || !inView) return
+    if (reduced || !inView || flow?.tick !== undefined) return // live mode: sheets print when the data changes
     const t = setInterval(() => setReports((n) => n + 1), 2800)
     return () => clearInterval(t)
-  }, [reduced, inView])
+  }, [reduced, inView, flow?.tick])
+  const sheetKey = flow?.tick !== undefined ? String(flow.tick) : String(reports)
   const team = [
-    { x: 58, y: 38, name: "Registrar · issues degree" },
-    { x: 104, y: 22, name: "Medical board · issues license" },
-    { x: 150, y: 40, name: "Alice · holds credentials" },
-    { x: 46, y: 92, name: "Employer · requests proof" },
-    { x: 146, y: 114, name: "Auditor · reads the log" },
+    { x: 58, y: 38, name: flow?.people?.[0] ?? "Registrar · issues degree" },
+    { x: 104, y: 22, name: flow?.people?.[1] ?? "Medical board · issues license" },
+    { x: 150, y: 40, name: flow?.people?.[2] ?? "Alice · holds credentials" },
+    { x: 46, y: 92, name: flow?.people?.[3] ?? "Employer · requests proof" },
+    { x: 146, y: 114, name: flow?.people?.[4] ?? "Auditor · reads the log" },
   ]
   const L1 = "M117,67 C196,67 210,100 262,100" // out of the team node …
   const L2 = "M117,73 C186,73 206,120 262,120" // … into the hub chip
@@ -435,13 +454,13 @@ function FlowCard({ brand, features, uid, reduced, inView }: { brand: string; fe
           {/* the report stack */}
           <g onMouseEnter={() => setSide("right")} onMouseLeave={() => setSide("")}>
             {[2, 1, 0].map((k) => (
-              <g key={reports - k} transform={"translate(" + (450 + k * 12) + "," + (40 - k * 10) + ")"} opacity={1 - k * 0.25}>
+              <g key={sheetKey + "-" + k} transform={"translate(" + (450 + k * 12) + "," + (40 - k * 10) + ")"} opacity={1 - k * 0.25}>
                 <g className={"ib-sheet" + (k === 0 ? " ib-sheet-new" : "")}>
                 <rect width="138" height="102" rx="3" fill="var(--ib-raise)" stroke="var(--ib-line-strong)" />
                 {k === 0 && (
                   <>
                     <text x="10" y="16" fontSize="7" fill="var(--ib-muted)" fontFamily="var(--ib-mono)">
-                      ZK PROOF · GROTH16
+                      {flow?.sheetLabel ?? "ZK PROOF · GROTH16"}
                     </text>
                     <rect x="10" y="24" width="64" height="5" rx="1" fill="var(--ib-ink)" opacity=".75" />
                     <rect x="10" y="33" width="92" height="3" rx="1" fill="var(--ib-line-strong)" />
@@ -533,7 +552,7 @@ function IntegrationsCard({ copy, reduced }: { copy: InkFeatures["integrations"]
             </g>
           ))}
           <text x="150" y="112" textAnchor="middle" fontSize="7" fill="var(--ib-faint)" fontFamily="var(--ib-mono)">
-            {on >= 0 ? "syncing · " + (copy.tools[on] ?? "").toLowerCase() : "4 connected"}
+            {on >= 0 ? "syncing · " + (copy.tools[on] ?? "").toLowerCase() : copy.status ?? "4 connected"}
           </text>
         </svg>
         <div style={{ marginTop: "auto" }}>
@@ -557,6 +576,8 @@ function InsightsCard({ copy, uid, reduced }: { copy: InkFeatures["insights"]; u
   const last = points[points.length - 1]
   const i = hover >= 0 ? hover : points.length - 1
   const p = points[i]
+  const showSplit = copy.splitLabel !== ""
+  const tipText = copy.labels?.[i] ?? (i >= split ? "quarantined" : "anchored")
   const onMove = (e: PointerSvgEv) => {
     const r = e.currentTarget.getBoundingClientRect()
     setHover(nearestIndex(points.map((q) => q[0]), ((e.clientX - r.left) / r.width) * W))
@@ -577,17 +598,21 @@ function InsightsCard({ copy, uid, reduced }: { copy: InkFeatures["insights"]; u
           ))}
           <path d={area} fill={"url(#" + fill + ")"} />
           <path d={line} fill="none" stroke="var(--ib-ink)" strokeWidth="1.4" pathLength={1} className="ib-line-draw" opacity=".85" />
-          <line x1={points[split][0]} x2={points[split][0]} y1="10" y2={H - 14} stroke="var(--ib-line-strong)" strokeDasharray="2 3" />
-          <text x={points[split][0] - 4} y={H - 18} textAnchor="end" fontSize="7" fill="var(--ib-faint)" fontFamily="var(--ib-mono)">
-            WINDOW OPENS
-          </text>
+          {showSplit && (
+            <>
+              <line x1={points[split][0]} x2={points[split][0]} y1="10" y2={H - 14} stroke="var(--ib-line-strong)" strokeDasharray="2 3" />
+              <text x={points[split][0] - 4} y={H - 18} textAnchor="end" fontSize="7" fill="var(--ib-faint)" fontFamily="var(--ib-mono)">
+                {copy.splitLabel ?? "WINDOW OPENS"}
+              </text>
+            </>
+          )}
           {hover >= 0 && <line x1={p[0]} x2={p[0]} y1="8" y2={H - 14} stroke="var(--ib-ink)" strokeOpacity=".35" />}
           {!reduced && hover < 0 && <circle cx={last[0]} cy={last[1]} r="7" fill="var(--ib-ink)" opacity=".15" className="ib-glow" />}
           <circle cx={p[0]} cy={p[1]} r="3.2" fill="var(--ib-raise)" stroke="var(--ib-ink)" strokeWidth="1.5" />
-          <g transform={"translate(" + clamp(p[0], 40, W - 40) + "," + (p[1] < 34 ? p[1] + 22 : p[1] - 12) + ")"}>
-            <rect x="-30" y="-11" width="60" height="15" rx="2" fill="var(--ib-inv)" />
+          <g transform={"translate(" + clamp(p[0], tipText.length * 2.3 + 8, W - (tipText.length * 2.3 + 8)) + "," + (p[1] < 34 ? p[1] + 22 : p[1] - 12) + ")"}>
+            <rect x={-(tipText.length * 2.3 + 6)} y="-11" width={tipText.length * 4.6 + 12} height="15" rx="2" fill="var(--ib-inv)" />
             <text x="0" y="-1" textAnchor="middle" fontSize="7.5" fill="var(--ib-inv-ink)" fontFamily="var(--ib-mono)">
-              {i >= split ? "quarantined" : "anchored"}
+              {tipText}
             </text>
           </g>
         </svg>
