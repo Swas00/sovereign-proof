@@ -1,69 +1,53 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { buildCrypto, CRED_TYPE, type Crypto } from "../packages/core/crypto";
-import { buildInput, prove, verifyProof, namedSignals, type SignedCredential, type ProofRequest } from "../packages/core/prover";
+import { CRED_TYPE } from "../packages/core/crypto";
+import { buildInput, prove, verifyProof, namedSignals, PUBLIC_SIGNAL_NAMES, type ProofRequest } from "../packages/core/prover";
+import { buildWorld, CODES, T_LEGACY } from "../packages/core/fixtures";
 
-let c: Crypto;
-const secret = 987654321n;
-const issue = (seed: string, type: bigint, a1: bigint, a2: bigint, idx: bigint, salt: bigint, holder = secret): SignedCredential => {
-  const k = c.keyFromSeed(seed);
-  const fields = { type, holderId: c.holderId(holder), a1, a2, statusIndex: idx, salt };
-  return { fields, sig: c.sign(k.prv, c.commitment(fields)), issuerPub: k.pub };
-};
-const DEGREE_CS = 555n, MEDICAL = 77n;
-const req: ProofRequest = { ageCutoff: 20050101n, requiredDegree: DEGREE_CS, requiredLicense: MEDICAL, today: 20261025n, nonce: 424242n };
-
-let id: SignedCredential, deg: SignedCredential, lic: SignedCredential;
-beforeAll(async () => {
-  c = await buildCrypto();
-  id = issue("gov", CRED_TYPE.ID, 19950315n, 0n, 1n, 11n);
-  deg = issue("uni", CRED_TYPE.DEGREE, DEGREE_CS, 20180601n, 2n, 22n);
-  lic = issue("board", CRED_TYPE.LICENSE, MEDICAL, 20300101n, 3n, 33n);
-});
+type W = Awaited<ReturnType<typeof buildWorld>>;
+let w: W;
+const req: ProofRequest = { ageCutoff: 20050101n, requiredDegree: CODES.CS_DEGREE, requiredLicense: CODES.MEDICAL, today: 20261025n, nonce: 424242n };
+beforeAll(async () => { w = await buildWorld(); });
+const run = (id = w.creds.id, deg = w.creds.degree, lic = w.creds.license, r = req, secret = w.holderSecret) => prove(buildInput(secret, id, deg, lic, r));
+const T = 120000;
 
 describe("compound ZK proof", () => {
-  it("proves degree + age>21 + active license, verifies, and leaks no private data", async () => {
+  it("proves degree + age>21 + active license, verifies, leaks no private data", async () => {
     const t0 = performance.now();
-    const p = await prove(buildInput(secret, id, deg, lic, req));
-    const ms = performance.now() - t0;
-    console.log(`proof generated in ${Math.round(ms)} ms (node, measured)`);
+    const p = await run();
+    process.stdout.write(`[measured] proof generation: ${Math.round(performance.now() - t0)} ms (node)\n`);
     expect(await verifyProof(p)).toBe(true);
     const s = namedSignals(p);
-    expect(s.degKeyId).toBe(c.keyId(deg.issuerPub));
-    expect(s.nonce).toBe(req.nonce);
+    expect(s.degKeyId).toBe(w.keyIdOf(w.keys["uni-x"]) === undefined ? 0n : BigInt(w.keyIdOf(w.keys["uni-x"])));
+    expect(s.degRoot.toString()).toBe(w.anchors.find((a) => a.issuerKeyId === w.keyIdOf(w.keys["uni-x"]))!.root);
     const blob = JSON.stringify(p);
-    for (const secretVal of ["19950315", "20300101", "20180601", secret.toString()]) expect(blob).not.toContain(secretVal);
-  }, 120000);
-
+    for (const v of ["19950315", "20300101", "20180601", w.holderSecret.toString()]) expect(blob).not.toContain(v);
+  }, T);
   it("verification fails if a public input (the nonce) is swapped", async () => {
-    const p = await prove(buildInput(secret, id, deg, lic, req));
+    const p = await run();
     const bad = { ...p, publicSignals: [...p.publicSignals] };
-    bad.publicSignals[10] = "1";
+    bad.publicSignals[PUBLIC_SIGNAL_NAMES.indexOf("nonce")] = "1";
     expect(await verifyProof(bad)).toBe(false);
-  }, 120000);
-
+  }, T);
   it("cannot prove age>21 for someone under 21", async () => {
-    const young = issue("gov", CRED_TYPE.ID, 20100315n, 0n, 1n, 11n);
-    await expect(prove(buildInput(secret, young, deg, lic, req))).rejects.toThrow();
-  }, 120000);
-
+    const i = w.issue("gov-id", CRED_TYPE.ID, 20100315n, 0n, 4n, 44n);
+    const young = w.present(i, w.anchorLog(w.keys["gov-id"], w.logs["gov-id"], T_LEGACY));
+    await expect(run(young)).rejects.toThrow();
+  }, T);
   it("cannot prove with an expired license", async () => {
-    const expired = issue("board", CRED_TYPE.LICENSE, MEDICAL, 20240101n, 3n, 33n);
-    await expect(prove(buildInput(secret, id, deg, expired, req))).rejects.toThrow();
-  }, 120000);
-
+    const i = w.issue("med-board", CRED_TYPE.LICENSE, CODES.MEDICAL, 20240101n, 5n, 55n);
+    await expect(run(undefined, undefined, w.present(i, w.anchorLog(w.keys["med-board"], w.logs["med-board"], T_LEGACY)))).rejects.toThrow();
+  }, T);
   it("cannot prove the wrong degree", async () => {
-    await expect(prove(buildInput(secret, id, deg, lic, { ...req, requiredDegree: 999n }))).rejects.toThrow();
-  }, 120000);
-
+    await expect(run(undefined, undefined, undefined, { ...req, requiredDegree: 999n })).rejects.toThrow();
+  }, T);
   it("cannot mix credentials belonging to different holders", async () => {
-    const other = issue("uni", CRED_TYPE.DEGREE, DEGREE_CS, 20180601n, 2n, 22n, 111n);
-    await expect(prove(buildInput(secret, id, other, lic, req))).rejects.toThrow();
-  }, 120000);
-
-  it("cannot prove with a forged (self-signed) credential: proof builds but names the forger's key", async () => {
-    const forged = issue("attacker", CRED_TYPE.DEGREE, DEGREE_CS, 20180601n, 2n, 22n);
-    const p = await prove(buildInput(secret, id, forged, lic, req));
-    expect(await verifyProof(p)).toBe(true); // math is valid...
-    expect(namedSignals(p).degKeyId).toBe(c.keyId(c.keyFromSeed("attacker").pub)); // ...trust layer must reject this key
-  }, 120000);
+    const i = w.issue("uni-x", CRED_TYPE.DEGREE, CODES.CS_DEGREE, 20180601n, 6n, 66n, { secret: 111n });
+    await expect(run(undefined, w.present(i, w.anchorLog(w.keys["uni-x"], w.logs["uni-x"], T_LEGACY)))).rejects.toThrow();
+  }, T);
+  it("cannot prove a credential that is not in the claimed log (wrong Merkle path is not a valid proof)", async () => {
+    const wrongPath = { ...w.creds.degree, merkle: w.logs["gov-id"].pathAt(0) };
+    const p = await run(undefined, wrongPath).catch(() => null);
+    // The circuit computes whatever root the path implies; the verifier then finds no notarized anchor for it.
+    if (p) expect(namedSignals(p).degRoot.toString()).not.toBe(w.anchors.find((a) => a.issuerKeyId === w.keyIdOf(w.keys["uni-x"]))!.root);
+  }, T);
 });

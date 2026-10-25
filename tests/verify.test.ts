@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { buildInput, prove, type ZkProof } from "../packages/core/prover";
-import { buildWorld, CODES } from "../packages/core/fixtures";
+import { buildWorld, CODES, DEPTH, T_LEGACY } from "../packages/core/fixtures";
 import { NonceStore, verifyPresentation, type VerifierRequest } from "../packages/core/verify";
 import { CRED_TYPE } from "../packages/core/crypto";
+import { IssuanceLog } from "../packages/core/merkle";
 import { publishNext, acceptRegistry, adminKeyFromSeed } from "../packages/core/registry";
 
 type W = Awaited<ReturnType<typeof buildWorld>>;
@@ -14,7 +15,7 @@ const mkReq = (nonce: bigint, extra: Partial<VerifierRequest> = {}): VerifierReq
 });
 const ctxFor = (nonce: bigint, over: Partial<Parameters<typeof verifyPresentation>[2]> = {}) => {
   const nonces = new NonceStore(); nonces.issue(NOW, nonce);
-  return { crypto: w.c, registry: w.registry, adminPub: w.admin.pub, statusLists: w.lists(), nonces, now: NOW + 1000, ...over };
+  return { crypto: w.c, registry: w.registry, adminPub: w.admin.pub, anchors: w.anchors, notaryPub: w.notary.pub, statusLists: w.lists(), nonces, now: NOW + 1000, ...over };
 };
 const step = (r: Awaited<ReturnType<typeof verifyPresentation>>, id: string) => r.steps.find((s) => s.id === id)!;
 
@@ -50,7 +51,9 @@ describe("verifier pipeline", () => {
     expect(r.verdict).toBe("rejected"); expect(step(r, "policy").outcome).toBe("fail");
   });
   it("rejects a valid proof signed by an issuer key not in the registry", async () => {
-    const forged = w.issue("uni-x", CRED_TYPE.DEGREE, CODES.CS_DEGREE, 20180601n, 2n, 22n, w.holderSecret, w.attacker);
+    const forgedLog = new IssuanceLog(w.c, DEPTH);
+    const forgedI = w.issue("uni-x", CRED_TYPE.DEGREE, CODES.CS_DEGREE, 20180601n, 2n, 22n, { key: w.attacker, log: forgedLog });
+    const forged = w.present(forgedI, w.anchorLog(w.attacker, forgedLog, T_LEGACY));
     const req = mkReq(2002n);
     const p = await prove(buildInput(w.holderSecret, w.creds.id, forged, w.creds.license, req));
     const r = await verifyPresentation(p, req, ctxFor(2002n));
@@ -58,7 +61,8 @@ describe("verifier pipeline", () => {
     expect(r.verdict).toBe("rejected"); expect(step(r, "trust-degree").detail).toContain("not in the trust registry");
   });
   it("rejects a degree from the wrong university when the verifier pins one", async () => {
-    const other = w.issue("uni-y", CRED_TYPE.DEGREE, CODES.CS_DEGREE, 20180601n, 2n, 22n);
+    const otherI = w.issue("uni-y", CRED_TYPE.DEGREE, CODES.CS_DEGREE, 20180601n, 2n, 22n);
+    const other = w.present(otherI, w.anchorLog(w.keys["uni-y"], w.logs["uni-y"], T_LEGACY));
     const req = mkReq(3003n);
     const p = await prove(buildInput(w.holderSecret, w.creds.id, other, w.creds.license, req));
     const r = await verifyPresentation(p, req, ctxFor(3003n));
@@ -78,11 +82,11 @@ describe("verifier pipeline", () => {
     const soft = await verifyPresentation(base, { ...baseReq, onStatusUnavailable: "warn" }, ctxFor(1001n, { statusLists: empty }));
     expect(soft.verdict).toBe("accepted"); expect(step(soft, "status-license").outcome).toBe("warn");
   });
-  it("quarantines a credential whose issuer key is declared compromised and keeps unrelated issuers valid", async () => {
+  it("conservative policy: if the theft window opens BEFORE the legacy anchor, nothing can be proven and the degree is quarantined (unrelated issuers stay valid)", async () => {
     const v2 = publishNext(w.registry, (b) => {
       const k = b.issuers.find((i) => i.issuerId === "uni-x")!.keys[0];
       k.status = "compromised";
-      k.compromise = { windowStart: "2026-10-23T10:00:00Z", windowEnd: "2026-10-25T10:00:00Z", reason: "simulated key theft" };
+      k.compromise = { windowStart: "2026-09-15T00:00:00Z", windowEnd: "2026-10-25T10:00:00Z", reason: "simulated key theft" };
     }, w.admin.priv, "2026-10-25T11:00:00Z");
     const r = await verifyPresentation(base, baseReq, ctxFor(1001n, { registry: v2, pinnedRegistry: w.registry }));
     expect(r.verdict).toBe("quarantined");

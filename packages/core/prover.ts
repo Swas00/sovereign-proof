@@ -1,11 +1,13 @@
 import * as snarkjs from "snarkjs";
 import { readFileSync } from "node:fs";
-import type { Crypto, CredentialFields, Signature, PublicKey } from "./crypto";
+import type { CredentialFields, Signature, PublicKey } from "./crypto";
+import type { MerklePath } from "./merkle";
 
 export interface SignedCredential {
   fields: CredentialFields;
   sig: Signature;
   issuerPub: PublicKey;
+  merkle: MerklePath; // inclusion path in the issuer's notarized issuance log
 }
 
 export interface ProofRequest {
@@ -17,7 +19,7 @@ export interface ProofRequest {
 }
 
 export const PUBLIC_SIGNAL_NAMES = [
-  "idKeyId", "degKeyId", "licKeyId", "idStatus", "degStatus", "licStatus",
+  "idKeyId", "degKeyId", "licKeyId", "idStatus", "degStatus", "licStatus", "idRoot", "degRoot", "licRoot",
   "ageCutoff", "requiredDegree", "requiredLicense", "today", "nonce",
 ] as const;
 
@@ -41,12 +43,15 @@ export function buildInput(holderSecret: bigint, id: SignedCredential, deg: Sign
     degCode: s(deg.fields.a1), degDate: s(deg.fields.a2), degSalt: s(deg.fields.salt), degStatus: s(deg.fields.statusIndex),
     degAx: s(deg.issuerPub.Ax), degAy: s(deg.issuerPub.Ay), degR8x: s(deg.sig.R8x), degR8y: s(deg.sig.R8y), degS: s(deg.sig.S),
     licType: s(lic.fields.a1), licExpiry: s(lic.fields.a2), licSalt: s(lic.fields.salt), licStatus: s(lic.fields.statusIndex),
+    idSib: id.merkle.siblings.map(s), idIdx: id.merkle.indices.map(String),
+    degSib: deg.merkle.siblings.map(s), degIdx: deg.merkle.indices.map(String),
+    licSib: lic.merkle.siblings.map(s), licIdx: lic.merkle.indices.map(String),
     licAx: s(lic.issuerPub.Ax), licAy: s(lic.issuerPub.Ay), licR8x: s(lic.sig.R8x), licR8y: s(lic.sig.R8y), licS: s(lic.sig.S),
   };
 }
 
 /** Generates the compound proof. Throws if any predicate or signature is false (the witness cannot be built). */
-export async function prove(input: Record<string, string>, a: Artifacts = DEFAULT_ARTIFACTS): Promise<ZkProof> {
+export async function prove(input: Record<string, string | string[]>, a: Artifacts = DEFAULT_ARTIFACTS): Promise<ZkProof> {
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(input, a.wasm, a.zkey);
   return { proof, publicSignals };
 }

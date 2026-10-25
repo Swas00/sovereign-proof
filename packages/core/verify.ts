@@ -2,6 +2,8 @@ import { randomBytes, createHash, type KeyObject } from "node:crypto";
 import type { Crypto } from "./crypto";
 import { verifyProof, namedSignals, type ZkProof, type ProofRequest } from "./prover";
 import { acceptRegistry, findKey, type SignedRegistry } from "./registry";
+import { evaluateEvidence } from "./incident";
+import type { Anchor } from "./notary";
 import { isRevoked, verifyStatusList, type StatusList } from "./status";
 
 export type Outcome = "pass" | "fail" | "quarantine" | "warn";
@@ -43,15 +45,17 @@ export interface VerifierContext {
   registry: SignedRegistry;
   pinnedRegistry?: SignedRegistry; // last version this verifier accepted (rollback protection)
   adminPub: KeyObject;
+  anchors: Anchor[]; // notarized issuance-log roots (public)
+  notaryPub: KeyObject;
   statusLists: Map<string, StatusList>; // by issuer keyId; absent = status service unavailable
   nonces: NonceStore;
   now: number;
 }
 
 const ROLES = [
-  { role: "identity", type: 1, key: "idKeyId", status: "idStatus", pin: "id" },
-  { role: "degree", type: 2, key: "degKeyId", status: "degStatus", pin: "degree" },
-  { role: "license", type: 3, key: "licKeyId", status: "licStatus", pin: "license" },
+  { role: "identity", type: 1, key: "idKeyId", status: "idStatus", root: "idRoot", pin: "id" },
+  { role: "degree", type: 2, key: "degKeyId", status: "degStatus", root: "degRoot", pin: "degree" },
+  { role: "license", type: 3, key: "licKeyId", status: "licStatus", root: "licRoot", pin: "license" },
 ] as const;
 
 export async function verifyPresentation(p: ZkProof, req: VerifierRequest, ctx: VerifierContext): Promise<VerificationResult> {
@@ -59,7 +63,7 @@ export async function verifyPresentation(p: ZkProof, req: VerifierRequest, ctx: 
   const add = (id: string, label: string, outcome: Outcome, detail: string) => steps.push({ id, label, outcome, detail });
   const finish = (): VerificationResult => {
     const verdict = steps.some((s) => s.outcome === "fail") ? "rejected" : steps.some((s) => s.outcome === "quarantine") ? "quarantined" : "accepted";
-    const sig = p.publicSignals.length >= 11 ? namedSignals(p) : undefined;
+    const sig = p.publicSignals.length >= 14 ? namedSignals(p) : undefined;
     return {
       verdict, steps,
       disclosed: {
@@ -83,7 +87,7 @@ export async function verifyPresentation(p: ZkProof, req: VerifierRequest, ctx: 
   if (n !== "ok") return finish();
 
   // 3. The proof must be about THIS request, not some weaker policy the holder picked
-  if (p.publicSignals.length !== 11) { add("policy", "Proof answers this request", "fail", "unexpected public signal count"); return finish(); }
+  if (p.publicSignals.length !== 14) { add("policy", "Proof answers this request", "fail", "unexpected public signal count"); return finish(); }
   const s = namedSignals(p);
   const same = s.ageCutoff === req.ageCutoff && s.requiredDegree === req.requiredDegree && s.requiredLicense === req.requiredLicense && s.today === req.today && s.nonce === req.nonce;
   add("policy", "Proof answers this request", same ? "pass" : "fail", same ? "age cutoff, degree, license, date and nonce match the verifier's request" : "proof was generated for a different policy or nonce");
@@ -108,13 +112,18 @@ export async function verifyPresentation(p: ZkProof, req: VerifierRequest, ctx: 
     const pin = req.requiredIssuers?.[r.pin];
     if (pin && pin !== hit.issuer.issuerId) { add(id, label, "fail", `verifier requires ${pin}, credential was issued by ${hit.issuer.issuerId}`); continue; }
     if (hit.key.status === "revoked") { add(id, label, "fail", `${hit.issuer.issuerId} key (epoch ${hit.key.epoch}) was revoked`); continue; }
+    // Issuance evidence: the credential's commitment must sit in a notarized issuance-log root for this key.
+    const ev = evaluateEvidence(keyId, s[r.root], ctx.anchors, ctx.notaryPub, hit.key.status === "compromised" ? hit.key.compromise : undefined);
     if (hit.key.status === "compromised") {
-      // No issuance evidence is carried by this proof yet, so we cannot tell legitimate from fraudulent. Quarantine, never silently accept.
-      add(id, label, "quarantine", `${hit.issuer.issuerId} key (epoch ${hit.key.epoch}) is declared compromised; no independent issuance evidence presented`);
+      if (ev.decision === "preserved") {
+        add(id, label, "pass", `${hit.issuer.issuerId} key epoch ${hit.key.epoch} is compromised, but legacy credential PRESERVED: ${ev.detail}`);
+        trusted[r.role] = true;
+      } else add(id, label, "quarantine", `${hit.issuer.issuerId} key epoch ${hit.key.epoch} is compromised; ${ev.decision === "unlogged" ? "no notarized issuance evidence" : "QUARANTINED"}: ${ev.detail}`);
       continue;
     }
+    if (ev.decision === "unlogged") { add(id, label, "fail", `credential is not in any notarized issuance log of ${hit.issuer.issuerId}`); continue; }
     trusted[r.role] = true;
-    add(id, label, "pass", `${hit.issuer.issuerId} (${hit.issuer.name}), key epoch ${hit.key.epoch}, active`);
+    add(id, label, "pass", `${hit.issuer.issuerId} (${hit.issuer.name}), key epoch ${hit.key.epoch}, active, issuance logged (${ev.detail})`);
   }
 
   // 6. Revocation via signed status list (only for keys we trust enough to look at)
