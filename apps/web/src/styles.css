@@ -435,3 +435,11 @@ img,svg,canvas,video{max-width:100%}
   .walletbox{position:static}
   .walletpanel{position:fixed;left:16px;right:16px;top:70px;width:auto}
 }
+
+/* "Signing as" line above authority buttons */
+.actingas{display:flex;align-items:flex-start;gap:10px;margin:0 0 18px;padding:10px 14px;border:1px solid var(--line);border-left:3px solid var(--control);border-radius:4px;background:var(--surface);font-size:13.5px;color:var(--ink-2)}
+.actingas svg{flex:none;margin-top:2px}
+.actingas[data-state=role]{border-left-color:var(--ok)} .actingas[data-state=role] svg{color:var(--ok)}
+.actingas[data-state=norole]{border-left-color:var(--warn)} .actingas[data-state=norole] svg{color:var(--warn)}
+.linkbtn{background:none;border:0;padding:0;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}
+@media (pointer:coarse){.linkbtn{min-height:44px;padding:0 6px}}

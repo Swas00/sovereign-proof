@@ -4,6 +4,7 @@ import { toggleTheme, useTheme } from "./theme";
 import { ROUTE_ROLE, signedPost } from "./signer";
 import WaveMesh from "@/components/ui/wave-mesh";
 import WalletPill from "@/components/WalletPill";
+import ActingAs from "@/components/ActingAs";
 import { anchorReceipt, connect, friendlyError, getWallet, shortAddr, useWalletState } from "./wallet";
 import { receiptText } from "../../../packages/core/receipt";
 import { api } from "./api";
@@ -289,6 +290,7 @@ function Trust({ pub, refresh }: { pub: any; refresh: () => void }) {
     <>
       <h1>Trust registry &amp; <em>key-compromise incident</em></h1>
       <p className="lead">Simulate the 48-hour university key theft and watch the trust decisions change. Run the same verification before and after on the Verify tab.</p>
+      <ActingAs />
       <div className="card"><h2>Incident controls</h2>
         <div className="row">
           <button className="btn" disabled={pub.phase !== "normal"} onClick={act("/api/demo/steal")}>1 · Thief issues a fake degree</button>
@@ -350,6 +352,7 @@ function Issue({ pub, refresh }: { pub: any; refresh: () => void }) {
     <>
       <h1>Issue a <em>credential</em></h1>
       <p className="lead">The issuer signs a salted commitment to the claims, logs the commitment, and the notary timestamps the log. The issuer receives only the holder's pseudonymous id, never the holder secret.</p>
+      <ActingAs />
       <div className="grid g2"><div className="card">
         <label htmlFor="is">Issuer</label>
         <select id="is" value={issuerId} onChange={(e) => {
@@ -381,6 +384,7 @@ function Audit({ pub, refresh }: { pub: any; refresh: () => void }) {
     <>
       <h1>Security &amp; <em>audit</em></h1>
       <p className="lead">Every change to the trust data is written to the chain with who made it, when, and the previous value. Refused attempts are recorded too. Each verification also leaves one record of public material only: a verdict, per-step outcomes and issuer ids.</p>
+      <ActingAs />
       <ChangeHistory pub={pub} refresh={refresh} />
       <div className="grid g2 mt">
         <div className="card"><h2>Verification log</h2>
