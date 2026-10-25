@@ -130,6 +130,18 @@ ok("the local faucet sends test ETH", Number(f.balance) >= 1);
 let threw = ""; try { await chain.fund("not-an-address"); } catch (e: any) { threw = e.message; }
 ok("the faucet refuses a malformed address", /valid address/.test(threw), threw);
 
+console.log("--- the contract cannot hold or move money");
+const abi = (await import("../chain/TrustAnchor.json", { with: { type: "json" } })).default.abi as any[];
+ok("no payable function, no receive and no fallback in the ABI", !abi.some((x) => x.stateMutability === "payable" || x.type === "receive" || x.type === "fallback"));
+const { parseEther } = await import("ethers");
+const stranger = (chain as any).signers[ACCOUNT.stranger];
+let sentWithCall = "", sentPlain = "";
+try { await (chain.contract!.connect(stranger) as any).recordVerification("0x" + "cd".repeat(32), 1, true, { value: parseEther("1") }); } catch (e: any) { sentWithCall = String(e.shortMessage ?? e.message); }
+try { await (await stranger.sendTransaction({ to: chain.address, value: parseEther("1") })).wait(); } catch (e: any) { sentPlain = String(e.shortMessage ?? e.message); }
+ok("attaching ETH to a contract call is refused by the chain", sentWithCall !== "", sentWithCall);
+ok("sending ETH straight to the contract is refused by the chain", sentPlain !== "", sentPlain);
+ok("the contract's balance is zero", (await chain.balanceOf(chain.address)) === 0n);
+
 console.log("--- reset");
 await chain.reset();
 snap = await chain.snapshot();
