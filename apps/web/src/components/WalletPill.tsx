@@ -34,7 +34,19 @@ export default function WalletPill() {
   const role = roleOf(w.account, w.info);
   const onNet = !w.info || w.chainId === w.info.chainId;
   const onTest = isTestChain(w.chainId);
-  const copy = (key: string, text: string) => { navigator.clipboard?.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(""), 1500); }).catch(() => undefined); };
+  // navigator.clipboard is missing on plain-http pages (other than localhost) and can be refused, so fall back to a hidden textarea.
+  const copy = async (key: string, text: string) => {
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; }
+    catch {
+      const t = document.createElement("textarea");
+      t.value = text; t.setAttribute("readonly", ""); t.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+      document.body.appendChild(t); t.select();
+      try { ok = document.execCommand("copy"); } catch { ok = false; }
+      t.remove();
+    }
+    setCopied((ok ? "" : "!") + key); setTimeout(() => setCopied(""), 2000);
+  };
 
   return (
     <div className="walletbox" ref={box}>
@@ -81,7 +93,7 @@ export default function WalletPill() {
                   {w.info?.roles.map((r) => (
                     <li key={r.role} className="wp-role"><span><strong>{r.role}</strong> <span className="muted mono">{shortAddr(r.address)}</span></span>
                       {DEMO_KEYS[r.role]
-                        ? <button type="button" className="btn ghost small" onClick={() => copy(r.role, DEMO_KEYS[r.role])}>{copied === r.role ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}{copied === r.role ? "Copied" : "Copy key"}</button>
+                        ? <button type="button" className="btn ghost small" onClick={() => copy(r.role, DEMO_KEYS[r.role])}>{copied === r.role ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}{copied === r.role ? "Copied" : copied === "!" + r.role ? "Copy failed" : "Copy key"}</button>
                         : <span className="small muted">server only</span>}</li>
                   ))}
                 </ul>
