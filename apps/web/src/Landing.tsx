@@ -58,14 +58,14 @@ export default function Landing() {
           }}
           integrations={{
             title: "Four public, signed sources",
-            description: "Trust registry, notary anchors, issuer logs and status lists. A verifier needs nothing else, and none of it names a holder.",
-            tools: live?.integrations.tools ?? ["Registry", "Notary", "Issuer log", "Status list"],
+            description: "Trust registry, on-chain anchors, issuer logs and status lists. A verifier needs nothing else, and none of it names a holder.",
+            tools: live?.integrations.tools ?? ["Registry", "Chain", "Issuer log", "Status list"],
             status: live?.integrations.status,
           }}
           insights={
             live?.insights ?? {
               title: "Incident-aware trust",
-              description: "When a university's key is stolen, credentials anchored before the theft window stay valid, and anything issued inside it is quarantined.",
+              description: "When a university's key is stolen, credentials anchored on the chain before the theft window stay valid, and anything issued inside it is quarantined.",
               values: [8, 12, 15, 19, 22, 26, 29, 31, 33, 38, 41, 45],
               forecastFrom: 8,
             }

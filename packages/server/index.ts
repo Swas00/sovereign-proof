@@ -7,12 +7,15 @@ import { CATALOG, credToWire, reqToProof, type WireRequest } from "../core/wire"
 import { rootFromPath } from "../core/merkle";
 import { CODES } from "../core/fixtures";
 import { createState, type State } from "./state";
+import { Chain } from "./chain";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const ROOT = resolve(import.meta.dirname, "../..");
 const FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
-let st: State = await createState();
+const chain = await Chain.connect(); // retries ~25s so `npm run dev` can start both together; never throws
+if (!chain.online) console.warn("chain unreachable at startup:", chain.error, "(verifiers will fail closed)");
+let st: State = await createState(chain);
 const app = express();
 app.use(express.json({ limit: "256kb" }));
 
@@ -30,12 +33,14 @@ app.get("/artifacts/compound.wasm", (_q, r) => r.sendFile(resolve(B, "compound_p
 app.get("/artifacts/compound.zkey", (_q, r) => r.sendFile(resolve(B, "compound.zkey")));
 app.get("/artifacts/compound_vkey.json", (_q, r) => r.sendFile(resolve(B, "compound_vkey.json")));
 
-app.get("/api/public", wrap((_q, r) => {
+app.get("/api/public", wrap(async (_q, r) => {
+  const snap = await chain.snapshot();
   const keyStatus = st.registry.body.issuers.flatMap((i) => i.keys.map((k) => ({ issuerId: i.issuerId, ...k })));
   r.json({
     phase: st.phase, outage: st.outage, catalog: CATALOG,
     registry: st.registry, history: st.history.map((h) => ({ version: h.body.version, issuedAt: h.body.issuedAt, hash: h.hash, note: h.body.note })),
-    keyStatus, anchors: st.w.anchors.map((a) => ({ ...a, sig: undefined })), summary: st.summary(),
+    keyStatus, anchors: snap.anchors.map((a) => ({ ...a, sig: undefined })), summary: snap.ok ? st.summary(snap.anchors) : undefined,
+    chain: { ok: snap.ok, error: snap.error, network: snap.network, rpc: snap.rpc, contract: snap.contract, blockNumber: snap.blockNumber, blockTime: snap.blockTime, registry: snap.registry, simulatedOutage: chain.forceOffline },
     revokedSlots: Object.fromEntries(Object.entries(st.revoked).map(([k, v]) => [k, v.length])),
     events: st.log.slice(-40), audit: st.audit.slice(-30),
   });
@@ -45,15 +50,16 @@ app.get("/api/demo/wallet/:profile", wrap((q, r) => {
   const w = st.wallets[q.params.profile]; if (!w) throw new Error("unknown profile");
   r.json(w);
 }));
-app.post("/api/demo/steal", wrap((_q, r) => { st.steal(); r.json({ ok: true }); }));
-app.post("/api/demo/declare", wrap((_q, r) => { st.declare(); r.json({ ok: true }); }));
-app.post("/api/demo/reissue", wrap((q, r) => { st.reissue(String(q.body.profile)); r.json({ ok: true }); }));
+app.post("/api/demo/steal", wrap(async (_q, r) => { await st.steal(); r.json({ ok: true }); }));
+app.post("/api/demo/declare", wrap(async (_q, r) => { await st.declare(); r.json({ ok: true }); }));
+app.post("/api/demo/reissue", wrap(async (q, r) => { await st.reissue(String(q.body.profile)); r.json({ ok: true }); }));
 app.post("/api/demo/revoke-license", wrap((q, r) => { st.revokeLicense(String(q.body.profile)); r.json({ ok: true }); }));
 app.post("/api/demo/outage", wrap((q, r) => { st.outage = !!q.body.on; st.event("status", st.outage ? "status service taken offline" : "status service restored"); r.json({ ok: true }); }));
-app.post("/api/demo/reset", wrap(async (_q, r) => { st = await createState(); r.json({ ok: true }); }));
+app.post("/api/demo/chain-outage", wrap((q, r) => { chain.forceOffline = !!q.body.on; st.event("chain", chain.forceOffline ? "chain taken offline (simulated): verifiers fail closed" : "chain back online"); r.json({ ok: true }); }));
+app.post("/api/demo/reset", wrap(async (_q, r) => { chain.forceOffline = false; await chain.ping(3, 500); st = await createState(chain); r.json({ ok: true }); }));
 
 // Issuance: the holder sends only their holderId (a hash); the issuer never sees the holder secret.
-app.post("/api/issue", wrap((q, r) => {
+app.post("/api/issue", wrap(async (q, r) => {
   const issuer = st.registry.body.issuers.find((i) => i.issuerId === q.body.issuerId); if (!issuer) throw new Error("unknown issuer");
   const type = Number(q.body.type); if (![1, 2, 3].includes(type) || !issuer.credTypes.includes(type)) throw new Error("issuer is not authorized for this credential type");
   const holderId = dec(q.body.holderId, "holderId"), a1 = dec(q.body.a1, "a1", 2n ** 32n);
@@ -70,9 +76,10 @@ app.post("/api/issue", wrap((q, r) => {
   const m = w.c.commitment(fields);
   const index = log.append(m);
   const anchor = w.anchorLog(activeKey, log, st.issueClock());
+  await st.syncChain(); // record the new log root on the chain
   const cred = { fields, sig: w.c.sign(activeKey.prv, m), issuerPub: activeKey.pub, merkle: log.pathAt(index, anchor.leafCount) };
   const role = type === 1 ? "id" : type === 2 ? "degree" : "license";
-  st.event("issuer", `${issuer.issuerId} issued a ${role} credential (anchored ${anchor.anchoredAt}); no holder identity recorded`);
+  st.event("issuer", `${issuer.issuerId} issued a ${role} credential (root anchored on the chain); no holder identity recorded`);
   const wire = credToWire(role, String(q.body.label ?? role).slice(0, 80), issuer.issuerId, rootFromPath(w.c, m, cred.merkle), cred, priv);
   // Hand the credential to the holder's wallet only if the supplied holderId really is that wallet's id.
   const wallet = st.wallets[String(q.body.profile ?? "")];
@@ -101,9 +108,11 @@ app.post("/api/verifier/verify", wrap(async (q, r) => {
   const wire = st.requests.get(String(q.body.requestId));
   const proof = q.body.proof;
   if (!wire || !proof || !Array.isArray(proof.publicSignals) || !proof.proof) throw new Error("unknown request or malformed proof");
+  const snap = await chain.snapshot(); // the verifier reads the chain itself, not our in-memory state
   const req: VerifierRequest = { ...reqToProof(wire), requiredIssuers: wire.requiredIssuers, onStatusUnavailable: wire.onStatusUnavailable };
   const result: VerificationResult = await verifyPresentation({ proof: proof.proof, publicSignals: proof.publicSignals.map(String) }, req, {
-    crypto: st.w.c, registry: st.registry, pinnedRegistry: st.pinned, adminPub: st.w.admin.pub, anchors: st.w.anchors, notaryPub: st.w.notary.pub,
+    crypto: st.w.c, registry: st.registry, pinnedRegistry: st.pinned, adminPub: st.w.admin.pub, anchors: snap.ok ? snap.anchors : [], notaryPub: st.w.notary.pub,
+    chain: { ok: snap.ok, error: snap.error, blockNumber: snap.blockNumber, registry: snap.registry.map((r) => ({ version: r.version, hash: r.hash })) },
     statusLists: st.lists(), nonces: st.nonces, now: Date.now(),
   });
   if (result.steps[0]?.id === "registry" && result.steps[0].outcome === "pass") st.pinned = st.registry;

@@ -18,9 +18,10 @@ export function evaluateEvidence(
 ): EvidenceDecision {
   const hit = anchors.find((a) => a.issuerKeyId === keyId && a.root === root.toString() && verifyAnchor(a, notaryPub));
   if (!hit) return { decision: "unlogged", detail: "proof's issuance-log root has no valid notary anchor for this key" };
-  if (!rec) return { decision: "preserved", detail: `log root notarized ${hit.anchoredAt}` };
+  const who = hit.chain ? `the chain (block ${hit.chain.blockNumber})` : "the notary";
+  if (!rec) return { decision: "preserved", detail: `log root anchored by ${who} ${hit.anchoredAt}` };
   if (Date.parse(hit.anchoredAt) <= Date.parse(rec.windowStart))
-    return { decision: "preserved", detail: `credential is in a log root the notary timestamped ${hit.anchoredAt}, before the compromise window opened (${rec.windowStart})` };
+    return { decision: "preserved", detail: `credential is in a log root ${who} timestamped ${hit.anchoredAt}, before the compromise window opened (${rec.windowStart})` };
   return { decision: "quarantined", detail: `its log root was anchored ${hit.anchoredAt}, inside/after the compromise window (${rec.windowStart}); a thief with the key could have produced it` };
 }
 

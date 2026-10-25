@@ -10,8 +10,10 @@ export interface Anchor {
   issuerKeyId: string;
   root: string; // decimal
   leafCount: number;
-  anchoredAt: string; // ISO, set by the NOTARY, never by the issuer
+  anchoredAt: string; // ISO, set by the NOTARY (or by the chain's block time), never by the issuer
   sig: string;
+  /** Present when the anchor was read from the blockchain: the block time is then the evidence, not a signature. */
+  chain?: { blockNumber: number; txHash: string };
 }
 const bodyOf = (a: Omit<Anchor, "sig">) => ({ issuerKeyId: a.issuerKeyId, root: a.root, leafCount: a.leafCount, anchoredAt: a.anchoredAt });
 
@@ -19,6 +21,8 @@ export function makeAnchor(issuerKeyId: string, root: bigint, leafCount: number,
   const base = { issuerKeyId, root: root.toString(), leafCount, anchoredAt: at };
   return { ...base, sig: sign(null, Buffer.from(sha256hex(canonical(bodyOf(base))), "hex"), notaryPriv).toString("base64") };
 }
+/** A chain anchor is trusted by virtue of being read from the chain; a notary anchor needs its signature to check out. */
 export function verifyAnchor(a: Anchor, notaryPub: KeyObject): boolean {
+  if (a.chain) return true;
   return verify(null, Buffer.from(sha256hex(canonical(bodyOf(a))), "hex"), notaryPub, Buffer.from(a.sig, "base64"));
 }

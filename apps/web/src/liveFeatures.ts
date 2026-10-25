@@ -74,15 +74,15 @@ export function liveFeatureProps(pub: PublicState) {
       tick: last?.auditId ?? "none",
     },
     integrations: {
-      tools: [`Registry v${pub.registry.body.version}`, `Notary · ${plural(pub.anchors.length, "anchor")}`, `Issuer logs · ${logs}`, `Status · ${revoked} revoked`],
+      tools: [`Registry v${pub.registry.body.version}`, `Chain · ${plural(pub.anchors.length, "anchor")}`, `Issuer logs · ${logs}`, `Status · ${revoked} revoked`],
       status: `v${pub.registry.body.version} · ${plural(pub.keyStatus.length, "key")}`,
     },
     insights: anchors.length >= 2
       ? {
           title: "Incident-aware trust",
           description: bad
-            ? `${bad.issuerId}'s key is declared compromised. ${plural(anchors.length - nQuarantined, "notarized anchor")} stay trusted; ${plural(nQuarantined, "anchor")} inside the theft window ${nQuarantined === 1 ? "is" : "are"} quarantined.`
-            : `${plural(anchors.length, "notarized anchor")} across ${plural(logs, "issuer log")}. If a key is declared compromised, only its anchors inside the theft window are quarantined.`,
+            ? `${bad.issuerId}'s key is declared compromised. ${plural(anchors.length - nQuarantined, "on-chain anchor")} stay trusted; ${plural(nQuarantined, "anchor")} inside the theft window ${nQuarantined === 1 ? "is" : "are"} quarantined.`
+            : `${plural(anchors.length, "on-chain anchor")} across ${plural(logs, "issuer log")}. If a key is declared compromised, only its anchors inside the theft window are quarantined.`,
           values: anchors.map((_, i) => i + 1),
           labels,
           forecastFrom: firstInWindow < 0 ? anchors.length - 1 : firstInWindow,

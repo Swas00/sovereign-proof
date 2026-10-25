@@ -111,3 +111,29 @@ describe("registry integrity", () => {
     expect(r.ok).toBe(false);
   });
 });
+
+describe("registry vs the public chain", () => {
+  const rec = (v = 1, hash = w.registry.hash) => ({ version: v, hash });
+  const run = (chain: any) => verifyPresentation(base, baseReq, ctxFor(1001n, { chain }));
+  it("passes when the registry equals the latest chain record", async () => {
+    const r = await run({ ok: true, blockNumber: 7, registry: [rec()] });
+    expect(r.verdict).toBe("accepted"); expect(step(r, "chain").outcome).toBe("pass"); expect(step(r, "chain").detail).toContain("block 7");
+  });
+  it("rejects a stale registry (a validly signed older version while the chain has moved on)", async () => {
+    const r = await run({ ok: true, registry: [rec(1), { version: 2, hash: "b".repeat(64) }] });
+    expect(r.verdict).toBe("rejected"); expect(step(r, "chain").detail).toContain("stale");
+  });
+  it("rejects a registry whose hash differs from the chain's record (fork or tamper)", async () => {
+    const r = await run({ ok: true, registry: [rec(1, "a".repeat(64))] });
+    expect(r.verdict).toBe("rejected"); expect(step(r, "chain").detail).toContain("differs");
+  });
+  it("rejects a registry version the chain has never seen", async () => {
+    const r = await run({ ok: true, registry: [] });
+    expect(r.verdict).toBe("rejected"); expect(step(r, "chain").detail).toContain("no registry record");
+  });
+  it("fails closed when the chain is unreachable", async () => {
+    const r = await run({ ok: false, error: "ECONNREFUSED", registry: [] });
+    expect(r.verdict).toBe("rejected"); expect(step(r, "chain").detail).toContain("failing closed");
+    expect(r.steps.map((s) => s.id)).not.toContain("zk"); // never reaches the proof when the trust root is unavailable
+  });
+});

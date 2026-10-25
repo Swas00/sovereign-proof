@@ -45,8 +45,10 @@ export interface VerifierContext {
   registry: SignedRegistry;
   pinnedRegistry?: SignedRegistry; // last version this verifier accepted (rollback protection)
   adminPub: KeyObject;
-  anchors: Anchor[]; // notarized issuance-log roots (public)
+  anchors: Anchor[]; // issuance-log roots anchored on the chain (or notarized, in unit tests)
   notaryPub: KeyObject;
+  /** What the verifier itself read from the chain. When present the registry must match it. */
+  chain?: { ok: boolean; error?: string; blockNumber?: number; registry: { version: number; hash: string }[] };
   statusLists: Map<string, StatusList>; // by issuer keyId; absent = status service unavailable
   nonces: NonceStore;
   now: number;
@@ -80,6 +82,22 @@ export async function verifyPresentation(p: ZkProof, req: VerifierRequest, ctx: 
   const rc = acceptRegistry(ctx.registry, ctx.adminPub, ctx.pinnedRegistry);
   add("registry", "Trust registry authentic and current", rc.ok ? "pass" : "fail", rc.ok ? `registry v${ctx.registry.body.version} signed by admin, extends pinned chain` : rc.reason);
   if (!rc.ok) return finish();
+
+  // 1b. The signed registry must also be the one recorded on the public chain (catches rollback or a forked registry
+  //     even if an attacker holds a validly signed older version). An unreachable chain fails closed.
+  if (ctx.chain) {
+    const c = ctx.chain, v = ctx.registry.body.version;
+    const rec = c.registry.find((r) => r.version === v), tip = c.registry[c.registry.length - 1];
+    let detail: string, pass = false;
+    if (!c.ok) detail = `chain unreachable (${c.error ?? "no response"}); failing closed`;
+    else if (!tip) detail = "the chain has no registry record yet";
+    else if (!rec) detail = `registry v${v} is not on the chain (chain is at v${tip.version})`;
+    else if (rec.hash !== ctx.registry.hash) detail = `registry v${v} differs from the version recorded on the chain (forked or altered)`;
+    else if (tip.version !== v) detail = `stale registry: v${v} is on the chain but the chain is at v${tip.version}`;
+    else { pass = true; detail = `registry v${v} matches the record on the chain${c.blockNumber ? ` (block ${c.blockNumber})` : ""}`; }
+    add("chain", "Registry matches the public chain record", pass ? "pass" : "fail", detail);
+    if (!pass) return finish();
+  }
 
   // 2. Challenge freshness / replay
   const n = ctx.nonces.consume(req.nonce, ctx.now);

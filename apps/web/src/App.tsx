@@ -244,10 +244,12 @@ function Trust({ pub, refresh }: { pub: any; refresh: () => void }) {
           <button className="btn ghost" disabled={pub.phase !== "declared"} onClick={act("/api/demo/reissue", { profile: "alice" })}>3 · University re-issues Alice's degree (epoch 2)</button>
           <button className="btn ghost" onClick={act("/api/demo/revoke-license", { profile: "alice" })}>Revoke Alice's license</button>
           <button className="btn ghost" onClick={act("/api/demo/outage", { on: !pub.outage })}>{pub.outage ? "Restore" : "Take down"} status service</button>
+          <button className="btn ghost" onClick={act("/api/demo/chain-outage", { on: !pub.chain?.simulatedOutage })}>{pub.chain?.simulatedOutage ? "Restore" : "Take down"} chain</button>
           <button className="btn ghost" onClick={act("/api/demo/reset")}>Reset demo</button>
         </div>
         {err && <p className="err" role="alert">{err}</p>}
       </div>
+      <ChainPanel chain={pub.chain} anchors={pub.anchors} />
       <div className="grid g2 mt">
         <div className="card"><h2>Issuer keys (registry v{pub.registry.body.version})</h2>
           <div className="tablewrap"><table><thead><tr><th>Issuer</th><th>Epoch</th><th>Status</th><th>Key id</th></tr></thead>
@@ -259,7 +261,7 @@ function Trust({ pub, refresh }: { pub: any; refresh: () => void }) {
         <div className="card"><h2>Recovery policy</h2>
           <ul className="clean small">
             <li>A valid signature is <strong>not</strong> proof of legitimate issuance.</li>
-            <li>Credentials from the compromised key are accepted only if their issuance-log root was timestamped by the independent notary <strong>before</strong> the compromise window opened.</li>
+            <li>Credentials from the compromised key are accepted only if their issuance-log root was timestamped by the blockchain <strong>before</strong> the compromise window opened.</li>
             <li>Credentials without such evidence are <strong>quarantined</strong>, not silently accepted or deleted. The university can re-attest them under the new key.</li>
             <li>Other issuers are unaffected. No holder identities are published.</li>
           </ul>
@@ -268,9 +270,9 @@ function Trust({ pub, refresh }: { pub: any; refresh: () => void }) {
             : <p className="small muted mt">No incident declared.</p>}
         </div>
       </div>
-      <div className="card mt"><h2>Notarized issuance anchors</h2>
-        <div className="tablewrap"><table><thead><tr><th>Issuer key</th><th>Entries</th><th>Anchored at (by notary)</th><th>Root</th></tr></thead>
-          <tbody>{pub.anchors.map((a: any, i: number) => (<tr key={i}><td className="mono">{short(a.issuerKeyId)}</td><td>{a.leafCount}</td><td className="mono">{a.anchoredAt}</td><td className="mono">{short(a.root)}</td></tr>))}</tbody></table></div>
+      <div className="card mt"><h2>On-chain issuance anchors</h2>
+        <div className="tablewrap"><table><thead><tr><th>Issuer key</th><th>Entries</th><th>Block time (set by the chain)</th><th>Block</th><th>Transaction</th><th>Root</th></tr></thead>
+          <tbody>{pub.anchors.map((a: any, i: number) => (<tr key={i}><td className="mono">{short(a.issuerKeyId)}</td><td>{a.leafCount}</td><td className="mono">{a.anchoredAt}</td><td className="mono">#{a.chain?.blockNumber}</td><td className="mono">{a.chain ? short(a.chain.txHash) : "-"}</td><td className="mono">{short(a.root)}</td></tr>))}</tbody></table></div>
       </div>
       <div className="card mt"><h2>Event log</h2><div className="timeline">{pub.events.map((e: any, i: number) => <div key={i}>{e.t.slice(11, 19)} · {e.type} · {e.detail}</div>)}</div></div>
     </>
@@ -336,13 +338,46 @@ function Audit({ pub }: { pub: any }) {
         </div>
         <div className="card"><h2>Trust model and honest limits</h2>
           <ul className="clean small">
-            <li><strong>Real:</strong> Groth16 proofs over the BN254 curve; EdDSA-Poseidon issuer signatures verified inside the circuit; Poseidon Merkle issuance logs; Ed25519-signed, hash-chained registry.</li>
-            <li><strong>Simulated:</strong> issuers, the notary and key custody all run in one demo server.</li>
-            <li><strong>Centralized:</strong> registry and status-list hosting. They are signed and versioned, so tampering is detectable, but this is not a decentralized network.</li>
+            <li><strong>Real:</strong> Groth16 proofs over the BN254 curve; EdDSA-Poseidon issuer signatures verified inside the circuit; Poseidon Merkle issuance logs; an Ed25519-signed, hash-chained registry; and a Solidity smart contract on an EVM chain that records registry hashes and issuance-log roots.</li>
+            <li><strong>Simulated:</strong> issuers and key custody run in one demo server, and the blockchain is a local development chain (Hardhat), not a public network. Its clock is steered to replay the demo timeline.</li>
+            <li><strong>Centralized:</strong> registry and status-list hosting, and the one local chain node. Registry versions are signed and their hashes are on the chain, so tampering is detectable, but the demo itself is not a decentralized network.</li>
             <li><strong>Dev-only:</strong> the trusted setup has a single local contribution. A real deployment needs a multi-party ceremony.</li>
             <li><strong>Leaks by design:</strong> issuer identity, revocation slot index and which notarized log root. Whole status lists are downloaded, so issuers do not learn which credential was checked.</li>
           </ul></div>
       </div>
     </>
+  );
+}
+
+function ChainPanel({ chain, anchors }: { chain: any; anchors: any[] }) {
+  if (!chain) return null;
+  const online = chain.ok;
+  return (
+    <div className="grid g2 mt">
+      <div className="card"><h2>Blockchain</h2>
+        <div className="row small" style={{ marginBottom: 12 }}>
+          <span className={"badge " + (online ? "b-ok" : "b-bad")}>{online ? "online" : "offline"}</span>
+          <span className="muted">{chain.network}</span>
+        </div>
+        {online ? (
+          <>
+            <div className="kv"><span>Contract</span><span>{chain.contract.slice(0, 10)}…{chain.contract.slice(-6)}</span><span>Latest block</span><span>#{chain.blockNumber}</span><span>Block time</span><span>{chain.blockTime}</span><span>Anchors recorded</span><span>{anchors.length}</span></div>
+            <h3 className="mt">Registry versions on the chain</h3>
+            <div className="tablewrap"><table><thead><tr><th>Ver</th><th>Hash</th><th>Block</th><th>Transaction</th></tr></thead>
+              <tbody>{chain.registry.map((r: any) => (<tr key={r.version}><td>v{r.version}</td><td className="mono">{short(r.hash)}</td><td className="mono">#{r.blockNumber}</td><td className="mono">{r.txHash ? short(r.txHash) : "-"}</td></tr>))}</tbody></table></div>
+          </>
+        ) : (
+          <p className="err" role="alert" style={{ marginTop: 0 }}>{chain.error ?? "chain unreachable"}. Verifiers fail closed: with no public record to check, nothing is accepted.{chain.simulatedOutage ? "" : " Start the node with npm run chain, then press Reset demo."}</p>
+        )}
+      </div>
+      <div className="card"><h2>What the chain does here</h2>
+        <ul className="clean small">
+          <li><strong>Timestamps nobody can edit.</strong> A university's service account posts the Merkle root of its credential log. The block time is the evidence that a credential existed before a key was stolen, and a thief holding the key cannot backdate it.</li>
+          <li><strong>A public, append-only registry history.</strong> Every registry version's hash is recorded, each naming the one before it. A rolled-back or forked registry is rejected even if it carries a valid signature.</li>
+          <li><strong>Only hashes go on-chain.</strong> No credentials, names, birth dates or proofs. Privacy comes from the zero-knowledge proof, not from the chain.</li>
+          <li><strong>Fails closed.</strong> If the chain cannot be read, a verifier accepts nothing.</li>
+        </ul>
+      </div>
+    </div>
   );
 }

@@ -33,10 +33,16 @@ await post("/api/demo/reissue", { profile: "alice" });
 await present("alice", last, "Alice: degree re-issued under epoch 2 key");
 await post("/api/demo/revoke-license", { profile: "alice" });
 await present("alice", last, "Alice: after her license is revoked");
+await post("/api/demo/chain-outage", { on: true });
+await present("alice", last, "chain unreachable (fail closed)").catch((e) => console.log(e.message));
+await post("/api/demo/chain-outage", { on: false });
 await post("/api/demo/outage", { on: true });
 await present("alice", last, "status service offline (fail closed)").catch((e) => console.log(e.message));
 await post("/api/demo/outage", { on: false });
 const pub = await get("/api/public");
+const c = pub.chain;
+console.log(`chain: ${c.ok ? "online" : "OFFLINE"} · ${c.network} · block ${c.blockNumber} · registry versions on chain [${c.registry.map((r: any) => r.version)}] · ${pub.anchors.length} anchors, each with block+tx: ${pub.anchors.every((a: any) => a.chain?.txHash && a.chain.blockNumber > 0)}`);
+if (!c.ok || c.registry.length !== 2 || c.registry[1].prevHash !== c.registry[0].hash) { console.log("CHAIN RECORD MISMATCH"); process.exit(1); }
 console.log("summary:", JSON.stringify(pub.summary), "| audit entries:", pub.audit.length);
 const leak = JSON.stringify(pub);
 for (const v of ["19950315", "987654321", "1122334455", "Alice Verma", "Harbor Lane", "Mallory Cross", "Dockside"]) if (leak.includes(v)) { console.log("LEAK in /api/public:", v); process.exit(1); }
