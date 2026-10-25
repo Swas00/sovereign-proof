@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check, Copy, KeyRound, Wallet } from "lucide-react";
 import { DEMO_KEYS } from "../../../../packages/core/signing";
 import { connect, disconnect, ensureNetwork, getTestEth, isTestChain, roleOf, setSignWith, shortAddr, useWalletState } from "../wallet";
@@ -9,6 +9,20 @@ export default function WalletPill() {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState("");
   const box = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const [dx, setDx] = useState(0);
+  // The pill can sit anywhere in the header (it wraps), so keep the panel inside the viewport with a 16px margin.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const fit = () => {
+      const el = panel.current; if (!el) return;
+      el.style.transform = "none";
+      const r = el.getBoundingClientRect(), vw = document.documentElement.clientWidth;
+      setDx(r.left < 16 ? 16 - r.left : r.right > vw - 16 ? vw - 16 - r.right : 0);
+    };
+    fit(); window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [open, w.account, w.error, w.balance]);
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
@@ -32,7 +46,7 @@ export default function WalletPill() {
         {w.account && <i className={"wp-dot" + (onNet ? "" : " warn")} aria-hidden />}
       </button>
       {open && (
-        <div className="walletpanel" role="dialog" aria-label="Wallet">
+        <div className="walletpanel" role="dialog" aria-label="Wallet" ref={panel} style={dx ? { transform: `translateX(${dx}px)` } : undefined}>
           {!w.account ? (
             <>
               <h3>Use your own wallet</h3>
