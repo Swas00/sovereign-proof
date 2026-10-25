@@ -39,6 +39,6 @@ await post("/api/demo/outage", { on: false });
 const pub = await get("/api/public");
 console.log("summary:", JSON.stringify(pub.summary), "| audit entries:", pub.audit.length);
 const leak = JSON.stringify(pub);
-for (const v of ["19950315", "987654321", "1122334455"]) if (leak.includes(v)) { console.log("LEAK in /api/public:", v); process.exit(1); }
+for (const v of ["19950315", "987654321", "1122334455", "Alice Verma", "Harbor Lane", "Mallory Cross", "Dockside"]) if (leak.includes(v)) { console.log("LEAK in /api/public:", v); process.exit(1); }
 console.log("no private values in public endpoint");
 process.exit(0);

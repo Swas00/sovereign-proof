@@ -32,7 +32,7 @@ describe("verifier pipeline", () => {
     expect(r.steps.every((s) => s.outcome === "pass")).toBe(true);
     expect(r.disclosed.issuers.map((i) => i.issuerId)).toEqual(["gov-id", "uni-x", "med-board"]);
     const dump = JSON.stringify(r);
-    for (const v of ["19950315", "20300101", "20180601", w.holderSecret.toString()]) expect(dump).not.toContain(v);
+    for (const v of ["19950315", "20300101", "20180601", w.holderSecret.toString(), "Alice", "Verma", "Harbor"]) expect(dump).not.toContain(v);
   });
   it("rejects replay of the same proof", async () => {
     const ctx = ctxFor(1001n);

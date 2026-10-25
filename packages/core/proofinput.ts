@@ -28,7 +28,7 @@ export function buildInput(holderSecret: bigint, id: SignedCredential, deg: Sign
   return {
     ageCutoff: s(req.ageCutoff), requiredDegree: s(req.requiredDegree), requiredLicense: s(req.requiredLicense),
     today: s(req.today), nonce: s(req.nonce), holderSecret: s(holderSecret),
-    dob: s(id.fields.a1), idSalt: s(id.fields.salt), idStatus: s(id.fields.statusIndex),
+    dob: s(id.fields.a1), idBind: s(id.fields.a2), idSalt: s(id.fields.salt), idStatus: s(id.fields.statusIndex),
     idAx: s(id.issuerPub.Ax), idAy: s(id.issuerPub.Ay), idR8x: s(id.sig.R8x), idR8y: s(id.sig.R8y), idS: s(id.sig.S),
     degCode: s(deg.fields.a1), degDate: s(deg.fields.a2), degSalt: s(deg.fields.salt), degStatus: s(deg.fields.statusIndex),
     degAx: s(deg.issuerPub.Ax), degAy: s(deg.issuerPub.Ay), degR8x: s(deg.sig.R8x), degR8y: s(deg.sig.R8y), degS: s(deg.sig.S),

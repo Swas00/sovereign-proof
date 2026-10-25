@@ -56,7 +56,13 @@ app.post("/api/demo/reset", wrap(async (_q, r) => { st = await createState(); r.
 app.post("/api/issue", wrap((q, r) => {
   const issuer = st.registry.body.issuers.find((i) => i.issuerId === q.body.issuerId); if (!issuer) throw new Error("unknown issuer");
   const type = Number(q.body.type); if (![1, 2, 3].includes(type) || !issuer.credTypes.includes(type)) throw new Error("issuer is not authorized for this credential type");
-  const holderId = dec(q.body.holderId, "holderId"), a1 = dec(q.body.a1, "a1", 2n ** 32n), a2 = dec(q.body.a2, "a2", 2n ** 32n);
+  const holderId = dec(q.body.holderId, "holderId"), a1 = dec(q.body.a1, "a1", 2n ** 32n);
+  let a2: bigint, priv: { name: string; address: string } | undefined;
+  if (type === 1) {
+    const text = (v: unknown, n: string) => { if (typeof v !== "string" || v.trim().length < 1 || v.length > 80) throw new Error(`${n} must be 1 to 80 characters`); return v.trim(); };
+    priv = { name: text(q.body.name, "name"), address: text(q.body.address, "address") };
+    a2 = st.w.c.identityBinding(priv.name, priv.address); // the issuer signs a hash; the verifier never receives either value
+  } else a2 = dec(q.body.a2, "a2", 2n ** 32n);
   const w = st.w;
   const activeKey = issuer.issuerId === "uni-x" && st.epoch2 ? st.epoch2 : w.keys[issuer.issuerId];
   const log = issuer.issuerId === "uni-x" && st.epoch2 ? st.epoch2Log : w.logs[issuer.issuerId];
@@ -67,7 +73,7 @@ app.post("/api/issue", wrap((q, r) => {
   const cred = { fields, sig: w.c.sign(activeKey.prv, m), issuerPub: activeKey.pub, merkle: log.pathAt(index, anchor.leafCount) };
   const role = type === 1 ? "id" : type === 2 ? "degree" : "license";
   st.event("issuer", `${issuer.issuerId} issued a ${role} credential (anchored ${anchor.anchoredAt}); no holder identity recorded`);
-  const wire = credToWire(role, String(q.body.label ?? role).slice(0, 80), issuer.issuerId, rootFromPath(w.c, m, cred.merkle), cred);
+  const wire = credToWire(role, String(q.body.label ?? role).slice(0, 80), issuer.issuerId, rootFromPath(w.c, m, cred.merkle), cred, priv);
   // Hand the credential to the holder's wallet only if the supplied holderId really is that wallet's id.
   const wallet = st.wallets[String(q.body.profile ?? "")];
   if (wallet && wallet.creds[0]?.fields.holderId === holderId.toString()) wallet.creds.push(wire);

@@ -20,7 +20,8 @@ describe("compound ZK proof", () => {
     expect(s.degKeyId).toBe(w.keyIdOf(w.keys["uni-x"]) === undefined ? 0n : BigInt(w.keyIdOf(w.keys["uni-x"])));
     expect(s.degRoot.toString()).toBe(w.anchors.find((a) => a.issuerKeyId === w.keyIdOf(w.keys["uni-x"]))!.root);
     const blob = JSON.stringify(p);
-    for (const v of ["19950315", "20300101", "20180601", w.holderSecret.toString()]) expect(blob).not.toContain(v);
+    for (const v of ["19950315", "20300101", "20180601", w.holderSecret.toString(), "Alice", "Verma", "Harbor"]) expect(blob).not.toContain(v);
+    expect(w.legacy.id.cred.fields.a2).toBe(w.c.identityBinding("Alice Verma", "12 Harbor Lane, Northfield")); // really bound into the signed ID
   }, T);
   it("verification fails if a public input (the nonce) is swapped", async () => {
     const p = await run();

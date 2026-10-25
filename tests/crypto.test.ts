@@ -26,4 +26,12 @@ describe("crypto", () => {
     const sig = c.sign(k.prv, c.commitment(f));
     expect(c.verify(c.commitment({ ...f, a1: 20100315n }), sig, k.pub)).toBe(false);
   });
+  it("identity binding: changing the signed name or address invalidates the credential", () => {
+    const k = c.keyFromSeed("gov");
+    const f = { ...fields(c), a2: c.identityBinding("Alice Verma", "12 Harbor Lane") };
+    const sig = c.sign(k.prv, c.commitment(f));
+    expect(c.verify(c.commitment(f), sig, k.pub)).toBe(true);
+    expect(c.verify(c.commitment({ ...f, a2: c.identityBinding("Alice Verma", "99 Other Street") }), sig, k.pub)).toBe(false);
+    expect(c.identityBinding("a", "b")).not.toBe(c.identityBinding("b", "a"));
+  });
 });

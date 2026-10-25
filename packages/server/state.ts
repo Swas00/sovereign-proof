@@ -1,5 +1,5 @@
 import { CRED_TYPE } from "../core/crypto";
-import { buildWorld, CODES, DEPTH, T_DECLARED, T_FRAUD, WINDOW_END, WINDOW_START } from "../core/fixtures";
+import { buildWorld, CODES, PEOPLE, DEPTH, T_DECLARED, T_FRAUD, WINDOW_END, WINDOW_START } from "../core/fixtures";
 import { IssuanceLog, rootFromPath } from "../core/merkle";
 import { declareCompromise, incidentSummary } from "../core/incident";
 import { NonceStore } from "../core/verify";
@@ -26,19 +26,19 @@ export async function createState() {
   const alice: Wallet = {
     profile: "alice", label: "Alice (legitimate holder)", holderSecret: w.holderSecret.toString(),
     creds: [
-      wrap("id", "National ID", "gov-id", w.legacy.id, w.creds.id),
+      { ...wrap("id", "National ID", "gov-id", w.legacy.id, w.creds.id), private: PEOPLE.alice },
       wrap("degree", "B.Sc. Computer Science, Northfield University", "uni-x", w.legacy.degree, w.creds.degree),
       wrap("license", "Medical license (MD)", "med-board", w.legacy.license, w.creds.license),
     ],
   };
   // Mallory: has a genuine ID and license but no real degree; the thief will hand her a fake one.
-  const mId = w.issue("gov-id", CRED_TYPE.ID, 19900101n, 0n, 21n, 211n, { secret: mallorySecret });
+  const mId = w.issue("gov-id", CRED_TYPE.ID, 19900101n, w.c.identityBinding(PEOPLE.mallory.name, PEOPLE.mallory.address), 21n, 211n, { secret: mallorySecret });
   const mLic = w.issue("med-board", CRED_TYPE.LICENSE, CODES.MEDICAL, 20300101n, 23n, 233n, { secret: mallorySecret });
   const a1 = w.anchorLog(w.keys["gov-id"], w.logs["gov-id"], "2026-10-01T09:05:00.000Z");
   const a2 = w.anchorLog(w.keys["med-board"], w.logs["med-board"], "2026-10-01T09:05:00.000Z");
   const mallory: Wallet = {
     profile: "mallory", label: "Mallory (will receive a thief-issued degree)", holderSecret: mallorySecret.toString(),
-    creds: [wrap("id", "National ID", "gov-id", mId, w.present(mId, a1)), wrap("license", "Medical license (MD)", "med-board", mLic, w.present(mLic, a2))],
+    creds: [{ ...wrap("id", "National ID", "gov-id", mId, w.present(mId, a1)), private: PEOPLE.mallory }, wrap("license", "Medical license (MD)", "med-board", mLic, w.present(mLic, a2))],
   };
 
   const st = {

@@ -7,6 +7,10 @@ import { makeAnchor, type Anchor } from "./notary";
 
 export const CODES = { CS_DEGREE: 555n, MEDICAL: 77n };
 export const SIZE = 1024;
+export const PEOPLE = {
+  alice: { name: "Alice Verma", address: "12 Harbor Lane, Northfield" },
+  mallory: { name: "Mallory Cross", address: "7 Dockside Road, Eastbrook" },
+};
 export const DEPTH = 10; // must equal D in circuits/compound_proof.circom
 // Demo timeline
 export const T_REGISTRY = "2026-09-01T08:00:00.000Z";
@@ -61,7 +65,7 @@ export async function buildWorld() {
 
   // Legitimate legacy issuance, notarized well before the incident.
   const legacy = {
-    id: issue("gov-id", CRED_TYPE.ID, 19950315n, 0n, 1n, 11n),
+    id: issue("gov-id", CRED_TYPE.ID, 19950315n, c.identityBinding(PEOPLE.alice.name, PEOPLE.alice.address), 1n, 11n),
     degree: issue("uni-x", CRED_TYPE.DEGREE, CODES.CS_DEGREE, 20180601n, 2n, 22n),
     license: issue("med-board", CRED_TYPE.LICENSE, CODES.MEDICAL, 20300101n, 3n, 33n),
   };

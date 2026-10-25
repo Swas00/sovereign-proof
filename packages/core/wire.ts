@@ -10,9 +10,11 @@ export interface WireCred {
   sig: { R8x: string; R8y: string; S: string };
   issuerPub: { Ax: string; Ay: string };
   merkle: { siblings: string[]; indices: number[] };
+  /** Attributes only the holder (and the issuer who wrote them) knows. They are bound into the signature but are never circuit inputs or proof outputs. */
+  private?: { name?: string; address?: string };
 }
 
-export function credToWire(role: WireCred["role"], label: string, issuerId: string, anchorRoot: bigint, c: SignedCredential): WireCred {
+export function credToWire(role: WireCred["role"], label: string, issuerId: string, anchorRoot: bigint, c: SignedCredential, priv?: WireCred["private"]): WireCred {
   const s = (x: bigint) => x.toString();
   return {
     role, label, issuerId, anchorRoot: s(anchorRoot),
@@ -20,6 +22,7 @@ export function credToWire(role: WireCred["role"], label: string, issuerId: stri
     sig: { R8x: s(c.sig.R8x), R8y: s(c.sig.R8y), S: s(c.sig.S) },
     issuerPub: { Ax: s(c.issuerPub.Ax), Ay: s(c.issuerPub.Ay) },
     merkle: { siblings: c.merkle.siblings.map(s), indices: c.merkle.indices },
+    ...(priv ? { private: priv } : {}),
   };
 }
 export function credFromWire(w: WireCred): SignedCredential {

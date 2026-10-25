@@ -78,7 +78,7 @@ template Compound() {
 
     // ---- private: holder secret and three signed credentials
     signal input holderSecret;
-    signal input dob; signal input idSalt; signal input idStatus; signal input idAx; signal input idAy; signal input idR8x; signal input idR8y; signal input idS;
+    signal input dob; signal input idBind; /* Poseidon(name, address): signed into the ID, never revealed */ signal input idSalt; signal input idStatus; signal input idAx; signal input idAy; signal input idR8x; signal input idR8y; signal input idS;
     signal input degCode; signal input degDate; signal input degSalt; signal input degStatus; signal input degAx; signal input degAy; signal input degR8x; signal input degR8y; signal input degS;
     signal input licType; signal input licExpiry; signal input licSalt; signal input licStatus; signal input licAx; signal input licAy; signal input licR8x; signal input licR8y; signal input licS;
     signal input idSib[D]; signal input idIdx[D];
@@ -92,7 +92,7 @@ template Compound() {
 
     component id = CredCheck(1, D);
     id.Ax <== idAx; id.Ay <== idAy; id.R8x <== idR8x; id.R8y <== idR8y; id.S <== idS;
-    id.holderSecret <== holderSecret; id.a1 <== dob; id.a2 <== 0; id.statusIndex <== idStatus; id.salt <== idSalt;
+    id.holderSecret <== holderSecret; id.a1 <== dob; id.a2 <== idBind; id.statusIndex <== idStatus; id.salt <== idSalt;
     for (var i = 0; i < D; i++) { id.sib[i] <== idSib[i]; id.idx[i] <== idIdx[i]; }
     idKeyId <== id.keyId; idStatusOut <== id.status; idRoot <== id.root;
 

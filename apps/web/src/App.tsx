@@ -48,7 +48,7 @@ function CredCard({ c, selected }: { c: WireCred; selected?: boolean }) {
       <div className="t">{c.label}</div>
       <div className="muted small">Issued by {c.issuerId} · stored only in your wallet</div>
       <div className="kv">
-        {c.role === "id" && (<><span>Date of birth</span><span>{fmtDate(f.a1)} <em className="tag-priv">private</em></span></>)}
+        {c.role === "id" && (<><span>Name</span><span>{c.private?.name ?? "(hidden)"} <em className="tag-priv">private</em></span><span>Home address</span><span>{c.private?.address ?? "(hidden)"} <em className="tag-priv">private</em></span><span>Date of birth</span><span>{fmtDate(f.a1)} <em className="tag-priv">private</em></span></>)}
         {c.role === "degree" && (<><span>Degree code</span><span>{f.a1} <em className="tag-priv">private</em></span><span>Graduated</span><span>{fmtDate(f.a2)} <em className="tag-priv">private</em></span></>)}
         {c.role === "license" && (<><span>License type</span><span>{f.a1} <em className="tag-priv">private</em></span><span>Expires</span><span>{fmtDate(f.a2)} <em className="tag-priv">private</em></span></>)}
         <span>Status slot</span><span>#{f.statusIndex} <em className="tag-pub">shared with verifier</em></span>
@@ -131,7 +131,7 @@ function Verify({ pub, refresh }: { pub: any; refresh: () => void }) {
               </select></div>))}
           <div className="mt cols">
             <div><h3>Proved, not disclosed</h3><ul className="clean small"><li>Holds the {degLabel}</li><li>Older than {req?.ageYears ?? age}</li><li>{licLabel} active today</li><li>All three belong to the same person</li></ul></div>
-            <div><h3>Never leaves this device</h3><ul className="clean small"><li>Name, date of birth, address</li><li>Graduation date, license expiry</li><li>Holder secret and signatures</li></ul></div>
+            <div><h3>Never leaves this device</h3><ul className="clean small"><li>Name, home address, date of birth</li><li>Graduation date, license expiry</li><li>Holder secret and signatures</li></ul></div>
           </div>
           <p className="small muted mt">The verifier will learn: which issuers signed (by key), each credential's revocation slot, and which notarized log the credential is in.</p>
           <div className="row mt">
@@ -242,13 +242,14 @@ function Issue({ pub, refresh }: { pub: any; refresh: () => void }) {
   const w = useWallet(profile, pub.phase);
   const [issuerId, setIssuerId] = useState("uni-x");
   const DEFAULTS: Record<number, [string, string]> = { 1: ["19900101", "0"], 2: ["555", "20240601"], 3: ["77", "20300101"] };
+  const [pname, setPname] = useState("Alice Verma"); const [paddr, setPaddr] = useState("12 Harbor Lane, Northfield");
   const [a1, setA1] = useState("555"); const [a2, setA2] = useState("20240601");
   const [out, setOut] = useState<any>(null); const [err, setErr] = useState("");
   const issuer = pub.registry.body.issuers.find((i: any) => i.issuerId === issuerId);
   const type = issuer.credTypes[0], role = type === 1 ? "id" : type === 2 ? "degree" : "license";
   async function go() {
     setErr(""); setOut(null);
-    try { setOut(await api("/api/issue", { issuerId, type, profile, holderId: w.creds[0].fields.holderId, a1, a2: type === 1 ? "0" : a2, label: `${({ id: "National ID", degree: "Degree", license: "License" } as any)[role]} (issued ${new Date().toLocaleTimeString()})` })); await refresh(); }
+    try { setOut(await api("/api/issue", { issuerId, type, profile, holderId: w.creds[0].fields.holderId, a1, a2: type === 1 ? "0" : a2, name: pname, address: paddr, label: `${({ id: "National ID", degree: "Degree", license: "License" } as any)[role]} (issued ${new Date().toLocaleTimeString()})` })); await refresh(); }
     catch (e: any) { setErr(e.message); }
   }
   return (
@@ -267,6 +268,9 @@ function Issue({ pub, refresh }: { pub: any; refresh: () => void }) {
         <select id="who" value={profile} onChange={(e) => setProfile(e.target.value)}><option value="alice">Alice</option><option value="mallory">Mallory</option></select>
         <label htmlFor="a1">{type === 1 ? "Date of birth (YYYYMMDD)" : type === 2 ? "Degree code" : "License type code"}</label>
         <input id="a1" value={a1} onChange={(e) => setA1(e.target.value)} inputMode="numeric" />
+        {type === 1 && (<><label htmlFor="nm">Full name</label><input id="nm" value={pname} onChange={(e) => setPname(e.target.value)} maxLength={80} />
+          <label htmlFor="ad">Home address</label><input id="ad" value={paddr} onChange={(e) => setPaddr(e.target.value)} maxLength={80} />
+          <p className="small muted">The issuer signs a hash of name and address together with the birth date. Verifiers never receive either value, and neither is ever an input to a proof.</p></>)}
         {type !== 1 && (<><label htmlFor="a2">{type === 2 ? "Graduation date (YYYYMMDD)" : "Expiry date (YYYYMMDD)"}</label><input id="a2" value={a2} onChange={(e) => setA2(e.target.value)} inputMode="numeric" /></>)}
         <div className="row mt"><button className="btn" onClick={go} disabled={!w}>Sign &amp; issue</button></div>
         {err && <p className="err" role="alert">{err}</p>}

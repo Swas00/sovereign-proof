@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 
 // Credential field layout. One generic 6-field shape signed with EdDSA-Poseidon:
 //   msg = Poseidon(type, holderId, a1, a2, statusIndex, salt)
-// ID card:  a1 = dob (YYYYMMDD),        a2 = 0
+// ID card:  a1 = dob (YYYYMMDD),        a2 = identityBinding(name, address)
 // Degree:   a1 = degreeCode,            a2 = graduation date (YYYYMMDD)
 // License:  a1 = licenseTypeCode,       a2 = expiry date (YYYYMMDD)
 export const CRED_TYPE = { ID: 1n, DEGREE: 2n, LICENSE: 3n } as const;
@@ -33,6 +33,7 @@ export interface Crypto {
   holderId(holderSecret: bigint): bigint;
   commitment(f: CredentialFields): bigint;
   keyFromSeed(seed: string): { prv: Uint8Array; pub: PublicKey };
+  identityBinding(name: string, address: string): bigint; // Poseidon(H(name), H(address)); goes in the ID credential's a2
   keyId(pub: PublicKey): bigint; // Poseidon(Ax, Ay): the public handle used in the registry and circuit
   sign(prv: Uint8Array, msg: bigint): Signature;
   verify(msg: bigint, sig: Signature, pub: PublicKey): boolean;
@@ -54,6 +55,11 @@ export async function buildCrypto(): Promise<Crypto> {
       const prv = createHash("sha256").update(seed).digest();
       const [x, y] = eddsa.prv2pub(prv);
       return { prv, pub: { Ax: toBig(x), Ay: toBig(y) } };
+    },
+    identityBinding(name, address) {
+      // 248-bit digests are valid field elements; the pair is hashed so the ID commits to both without exposing either.
+      const f = (s: string) => BigInt("0x" + createHash("sha256").update(s.normalize("NFC")).digest("hex").slice(0, 62));
+      return hash([f(name), f(address)]);
     },
     keyId: (pub) => hash([pub.Ax, pub.Ay]),
     sign(prv, msg) {
