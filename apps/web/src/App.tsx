@@ -1,0 +1,299 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { api } from "./api";
+import { proveInBrowser } from "./prove";
+import type { WireCred, WireRequest } from "../../../packages/core/wire";
+
+type Tab = "verify" | "wallet" | "trust" | "issue" | "audit";
+const ICON: Record<string, string> = { pass: "✓", fail: "✕", quarantine: "⚠", warn: "!" };
+const CLS: Record<string, string> = { pass: "ok", fail: "bad", quarantine: "warn", warn: "warn" };
+const fmtDate = (n: string) => (n === "0" ? "-" : `${n.slice(0, 4)}-${n.slice(4, 6)}-${n.slice(6, 8)}`);
+const short = (s: string) => `${s.slice(0, 8)}…${s.slice(-4)}`;
+
+export default function App() {
+  const [tab, setTab] = useState<Tab>("verify");
+  const [pub, setPub] = useState<any>(null);
+  const [error, setError] = useState("");
+  const refresh = useCallback(() => api("/api/public").then(setPub).catch((e) => setError(e.message)), []);
+  useEffect(() => { refresh(); }, [refresh]);
+  const phaseLabel = pub ? ({ normal: "Normal operation", stolen: "Key stolen (undetected)", declared: "Compromise declared" } as any)[pub.phase] : "";
+  return (
+    <div className="wrap">
+      <header>
+        <div className="brand"><span className="logo">◆</span> Sovereign Proof</div>
+        {pub && <span className="phase" aria-live="polite">Registry v{pub.registry.body.version} · {phaseLabel}</span>}
+        <nav aria-label="Main">
+          {([["verify", "Verify"], ["wallet", "Wallet"], ["trust", "Trust & incident"], ["issue", "Issue"], ["audit", "Audit"]] as const).map(([k, l]) => (
+            <button key={k} aria-current={tab === k ? "page" : undefined} onClick={() => setTab(k)}>{l}</button>
+          ))}
+        </nav>
+      </header>
+      {error && <p className="err" role="alert">{error}</p>}
+      {!pub ? <p className="muted">Connecting to the demo registry…</p> : tab === "verify" ? <Verify pub={pub} refresh={refresh} /> :
+        tab === "wallet" ? <Wallet pub={pub} /> : tab === "trust" ? <Trust pub={pub} refresh={refresh} /> :
+        tab === "issue" ? <Issue pub={pub} refresh={refresh} /> : <Audit pub={pub} />}
+    </div>
+  );
+}
+
+function useWallet(profile: string, version: unknown) {
+  const [w, setW] = useState<any>(null);
+  useEffect(() => { api(`/api/demo/wallet/${profile}`).then(setW).catch(() => setW(null)); }, [profile, version]);
+  return w;
+}
+
+function CredCard({ c, selected }: { c: WireCred; selected?: boolean }) {
+  const f = c.fields;
+  return (
+    <div className={"cred" + (selected ? " sel" : "")}>
+      <div className="t">{c.label}</div>
+      <div className="muted small">Issued by {c.issuerId} · stored only in your wallet</div>
+      <div className="kv">
+        {c.role === "id" && (<><span>Date of birth</span><span>{fmtDate(f.a1)} <em className="tag-priv">private</em></span></>)}
+        {c.role === "degree" && (<><span>Degree code</span><span>{f.a1} <em className="tag-priv">private</em></span><span>Graduated</span><span>{fmtDate(f.a2)} <em className="tag-priv">private</em></span></>)}
+        {c.role === "license" && (<><span>License type</span><span>{f.a1} <em className="tag-priv">private</em></span><span>Expires</span><span>{fmtDate(f.a2)} <em className="tag-priv">private</em></span></>)}
+        <span>Status slot</span><span>#{f.statusIndex} <em className="tag-pub">shared with verifier</em></span>
+      </div>
+    </div>
+  );
+}
+
+function Verify({ pub, refresh }: { pub: any; refresh: () => void }) {
+  const [profile, setProfile] = useState("alice");
+  const wallet = useWallet(profile, pub.phase + pub.registry.body.version + JSON.stringify(pub.revokedSlots));
+  const [issuerPin, setIssuerPin] = useState("uni-x");
+  const [age, setAge] = useState(21);
+  const [policy, setPolicy] = useState<"reject" | "warn">("reject");
+  const [req, setReq] = useState<WireRequest | null>(null);
+  const [pick, setPick] = useState<Record<string, number>>({});
+  const [busy, setBusy] = useState("");
+  const [ms, setMs] = useState(0);
+  const [res, setRes] = useState<any>(null);
+  const [err, setErr] = useState("");
+  const byRole = useMemo(() => {
+    const m: Record<string, WireCred[]> = { id: [], degree: [], license: [] };
+    (wallet?.creds ?? []).forEach((c: WireCred) => m[c.role].push(c));
+    return m;
+  }, [wallet]);
+  const chosen = (role: string) => byRole[role][pick[role] ?? byRole[role].length - 1];
+
+  async function createRequest() {
+    setErr(""); setRes(null);
+    try { setReq(await api("/api/verifier/request", { requiredDegree: pub.catalog.degrees[0].code, requiredLicense: pub.catalog.licenses[0].code, ageYears: age, requiredDegreeIssuer: issuerPin || undefined, onStatusUnavailable: policy })); }
+    catch (e: any) { setErr(e.message); }
+  }
+  async function respond() {
+    if (!req || !wallet) return;
+    const [id, degree, license] = [chosen("id"), chosen("degree"), chosen("license")];
+    if (!id || !degree || !license) { setErr("This wallet is missing a required credential (see Wallet tab)."); return; }
+    setErr(""); setRes(null); setBusy("Generating zero-knowledge proof in your browser…");
+    const t0 = performance.now(), tick = setInterval(() => setMs(performance.now() - t0), 200);
+    try {
+      const p = await proveInBrowser(wallet.holderSecret, id, degree, license, req);
+      setBusy("Verifier is checking proof, issuer trust and revocation…");
+      const out = await api("/api/verifier/verify", { requestId: req.id, proof: { proof: p.proof, publicSignals: p.publicSignals } });
+      setMs(performance.now() - t0); setRes({ ...out, proofBytes: JSON.stringify(p.proof).length, requestId: req.id }); setReq(null); refresh();
+    } catch (e: any) { setErr(e.message || "proof generation failed: your credentials do not satisfy this request"); }
+    finally { clearInterval(tick); setBusy(""); }
+  }
+  const degLabel = pub.catalog.degrees[0].label, licLabel = pub.catalog.licenses[0].label;
+  return (
+    <>
+      <h1>Prove it without exposing it</h1>
+      <p className="lead">An employer needs three facts at once. The holder proves all three with a single zero-knowledge proof, so the employer never sees a name, birth date, address or transcript.</p>
+      <div className="grid g2">
+        <section className="card" aria-labelledby="v-h">
+          <h2 id="v-h">1 · Verifier (employer) policy</h2>
+          <label htmlFor="deg">Required degree</label>
+          <select id="deg" disabled><option>{degLabel}</option></select>
+          <label htmlFor="pin">Degree must be issued by</label>
+          <select id="pin" value={issuerPin} onChange={(e) => setIssuerPin(e.target.value)}>
+            <option value="uni-x">Northfield University</option><option value="">Any trusted university</option>
+          </select>
+          <label htmlFor="age">Applicant must be older than</label>
+          <input id="age" type="number" min={1} max={99} value={age} onChange={(e) => setAge(Number(e.target.value))} />
+          <label htmlFor="lic">Required license</label>
+          <select id="lic" disabled><option>{licLabel}</option></select>
+          <label htmlFor="pol">If the revocation service is unreachable</label>
+          <select id="pol" value={policy} onChange={(e) => setPolicy(e.target.value as any)}><option value="reject">Reject (fail closed)</option><option value="warn">Warn and continue</option></select>
+          <div className="row mt"><button className="btn" onClick={createRequest} disabled={!!busy}>Create verification request</button></div>
+          {req && <p className="small mt">Request <span className="mono">{short(req.id)}</span> issued. Single-use challenge, valid for 5 minutes. The policy is stored by the verifier, so the holder cannot weaken it.</p>}
+        </section>
+        <section className="card" aria-labelledby="h-h">
+          <h2 id="h-h">2 · Holder wallet</h2>
+          <label htmlFor="prof">Wallet</label>
+          <select id="prof" value={profile} onChange={(e) => { setProfile(e.target.value); setPick({}); setRes(null); }}>
+            <option value="alice">Alice (legitimate holder)</option><option value="mallory">Mallory (fake degree from stolen key)</option>
+          </select>
+          {byRole.degree.length > 1 && (<><label htmlFor="degpick">Degree credential to present</label>
+            <select id="degpick" value={pick.degree ?? byRole.degree.length - 1} onChange={(e) => setPick({ ...pick, degree: Number(e.target.value) })}>
+              {byRole.degree.map((d, i) => <option key={i} value={i}>{d.label}</option>)}
+            </select></>)}
+          <div className="mt cols">
+            <div><h3>Proved, not disclosed</h3><ul className="clean small"><li>Holds the {degLabel}</li><li>Older than {req?.ageYears ?? age}</li><li>{licLabel} active today</li><li>All three belong to the same person</li></ul></div>
+            <div><h3>Never leaves this device</h3><ul className="clean small"><li>Name, date of birth, address</li><li>Graduation date, license expiry</li><li>Holder secret and signatures</li></ul></div>
+          </div>
+          <p className="small muted mt">The verifier will learn: which issuers signed (by key), each credential's revocation slot, and which notarized log the credential is in.</p>
+          <div className="row mt">
+            <button className="btn" onClick={respond} disabled={!req || !!busy || !wallet}>Generate proof &amp; send</button>
+            {!req && <span className="small muted">Create a request first</span>}
+          </div>
+          {busy && <p className="small mt" role="status"><span className="spin" />{busy} {(ms / 1000).toFixed(1)}s</p>}
+          {err && <p className="err" role="alert">{err}</p>}
+        </section>
+      </div>
+      {res && <Result res={res} ms={ms} />}
+    </>
+  );
+}
+
+function Result({ res, ms }: { res: any; ms: number }) {
+  const head = { accepted: ["✓", "Verified", "All requirements proven; issuers trusted; nothing revoked."], quarantined: ["⚠", "Quarantined", "Cryptographically valid, but trust cannot be established under the incident policy."], rejected: ["✕", "Rejected", "At least one requirement failed."] }[res.verdict as "accepted"];
+  return (
+    <section className="mt" aria-live="polite">
+      <div className={"verdict v-" + res.verdict}>
+        <span className="big" aria-hidden>{head[0]}</span>
+        <div><div className="big">{head[1]}</div><div className="small muted">{head[2]} Audit id <span className="mono">{res.auditId}</span> · total {(ms / 1000).toFixed(1)}s incl. proving · proof ≈ {(res.proofBytes / 1024).toFixed(1)} KB</div></div>
+      </div>
+      <div className="grid g2">
+        <div className="card"><h2>Why: step by step</h2>
+          <ol className="steps">{res.steps.map((s: any) => (
+            <li key={s.id}><span className={"ico " + CLS[s.outcome]} aria-label={s.outcome}>{ICON[s.outcome]}</span>
+              <div><div><strong>{s.label}</strong></div><div className="small muted">{s.detail}</div></div></li>))}</ol>
+        </div>
+        <div className="card"><h2>What the verifier learned</h2>
+          <table><tbody>{res.disclosed.issuers.map((i: any) => (<tr key={i.role}><td>{i.role}</td><td>signed by <strong>{i.issuerId ?? "unknown key"}</strong><div className="mono muted">{short(i.keyId)}</div></td></tr>))}</tbody></table>
+          <h3 className="mt">Stayed private</h3>
+          <ul className="clean small">{res.hidden.map((h: string) => <li key={h}>{h}</li>)}</ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Wallet({ pub }: { pub: any }) {
+  const [profile, setProfile] = useState("alice");
+  const w = useWallet(profile, pub.phase);
+  return (
+    <>
+      <h1>Holder wallet</h1>
+      <p className="lead">Credentials live with the holder, not in any institution's database. This view is private to the holder; none of the attribute values below are ever sent to a verifier.</p>
+      <label htmlFor="wp">Wallet</label>
+      <select id="wp" value={profile} onChange={(e) => setProfile(e.target.value)} style={{ maxWidth: 360 }}>
+        <option value="alice">Alice</option><option value="mallory">Mallory</option>
+      </select>
+      <div className="grid g3 mt">{w?.creds.map((c: WireCred, i: number) => <CredCard key={i} c={c} />)}</div>
+      <p className="small muted mt">Demo note: holder secrets are held by the demo server only so the walkthrough is reproducible. In a real wallet the secret is generated and kept on the holder's device.</p>
+    </>
+  );
+}
+
+function Trust({ pub, refresh }: { pub: any; refresh: () => void }) {
+  const [err, setErr] = useState("");
+  const act = (path: string, body?: unknown) => async () => { setErr(""); try { await api(path, body ?? {}); await refresh(); } catch (e: any) { setErr(e.message); } };
+  const s = pub.summary;
+  const badge = (st: string) => <span className={"badge " + (st === "active" ? "b-ok" : st === "compromised" ? "b-warn" : "b-bad")}>{st}</span>;
+  return (
+    <>
+      <h1>Trust registry &amp; key-compromise incident</h1>
+      <p className="lead">Simulate the 48-hour university key theft and watch the trust decisions change. Run the same verification before and after on the Verify tab.</p>
+      <div className="card"><h2>Incident controls</h2>
+        <div className="row">
+          <button className="btn" disabled={pub.phase !== "normal"} onClick={act("/api/demo/steal")}>1 · Thief issues a fake degree</button>
+          <button className="btn danger" disabled={pub.phase === "declared"} onClick={act("/api/demo/declare")}>2 · Declare key compromise</button>
+          <button className="btn ghost" disabled={pub.phase !== "declared"} onClick={act("/api/demo/reissue", { profile: "alice" })}>3 · University re-issues Alice's degree (epoch 2)</button>
+          <button className="btn ghost" onClick={act("/api/demo/revoke-license", { profile: "alice" })}>Revoke Alice's license</button>
+          <button className="btn ghost" onClick={act("/api/demo/outage", { on: !pub.outage })}>{pub.outage ? "Restore" : "Take down"} status service</button>
+          <button className="btn ghost" onClick={act("/api/demo/reset")}>Reset demo</button>
+        </div>
+        {err && <p className="err" role="alert">{err}</p>}
+      </div>
+      <div className="grid g2 mt">
+        <div className="card"><h2>Issuer keys (registry v{pub.registry.body.version})</h2>
+          <div className="tablewrap"><table><thead><tr><th>Issuer</th><th>Epoch</th><th>Status</th><th>Key id</th></tr></thead>
+            <tbody>{pub.keyStatus.map((k: any) => (<tr key={k.keyId}><td>{k.issuerId}</td><td>{k.epoch}</td><td>{badge(k.status)}</td><td className="mono">{short(k.keyId)}</td></tr>))}</tbody></table></div>
+          <p className="small muted mt">Registry versions are hash-chained and signed by the registry admin key. Verifiers pin the newest version they accepted and refuse rollbacks.</p>
+          <h3>Version history</h3>
+          <div className="small">{pub.history.map((h: any) => <div key={h.version}>v{h.version} · <span className="mono">{short(h.hash)}</span> {h.note && <span className="muted">· {h.note}</span>}</div>)}</div>
+        </div>
+        <div className="card"><h2>Recovery policy</h2>
+          <ul className="clean small">
+            <li>A valid signature is <strong>not</strong> proof of legitimate issuance.</li>
+            <li>Credentials from the compromised key are accepted only if their issuance-log root was timestamped by the independent notary <strong>before</strong> the compromise window opened.</li>
+            <li>Credentials without such evidence are <strong>quarantined</strong>, not silently accepted or deleted. The university can re-attest them under the new key.</li>
+            <li>Other issuers are unaffected. No holder identities are published.</li>
+          </ul>
+          {s ? (<div className="mt"><h3>Incident summary (counts only)</h3>
+            <div className="kv"><span>Trusted anchors</span><span>{s.trustedAnchors}</span><span>Suspect anchors</span><span>{s.suspectAnchors}</span><span>Legacy entries protected</span><span>{s.legacyCredentialsProtected}</span><span>Last trusted anchor</span><span className="mono">{s.lastTrustedAnchor}</span></div></div>)
+            : <p className="small muted mt">No incident declared.</p>}
+        </div>
+      </div>
+      <div className="card mt"><h2>Notarized issuance anchors</h2>
+        <div className="tablewrap"><table><thead><tr><th>Issuer key</th><th>Entries</th><th>Anchored at (by notary)</th><th>Root</th></tr></thead>
+          <tbody>{pub.anchors.map((a: any, i: number) => (<tr key={i}><td className="mono">{short(a.issuerKeyId)}</td><td>{a.leafCount}</td><td className="mono">{a.anchoredAt}</td><td className="mono">{short(a.root)}</td></tr>))}</tbody></table></div>
+      </div>
+      <div className="card mt"><h2>Event log</h2><div className="timeline">{pub.events.map((e: any, i: number) => <div key={i}>{e.t.slice(11, 19)} · {e.type} · {e.detail}</div>)}</div></div>
+    </>
+  );
+}
+
+function Issue({ pub, refresh }: { pub: any; refresh: () => void }) {
+  const [profile, setProfile] = useState("alice");
+  const w = useWallet(profile, pub.phase);
+  const [issuerId, setIssuerId] = useState("uni-x");
+  const [a1, setA1] = useState("555"); const [a2, setA2] = useState("20240601");
+  const [out, setOut] = useState<any>(null); const [err, setErr] = useState("");
+  const issuer = pub.registry.body.issuers.find((i: any) => i.issuerId === issuerId);
+  const type = issuer.credTypes[0], role = type === 1 ? "id" : type === 2 ? "degree" : "license";
+  async function go() {
+    setErr(""); setOut(null);
+    try { setOut(await api("/api/issue", { issuerId, type, holderId: w.creds[0].fields.holderId, a1, a2: type === 1 ? "0" : a2, label: `${role} (issued in this session)` })); await refresh(); }
+    catch (e: any) { setErr(e.message); }
+  }
+  return (
+    <>
+      <h1>Issue a credential</h1>
+      <p className="lead">The issuer signs a salted commitment to the claims, logs the commitment, and the notary timestamps the log. The issuer receives only the holder's pseudonymous id, never the holder secret.</p>
+      <div className="grid g2"><div className="card">
+        <label htmlFor="is">Issuer</label>
+        <select id="is" value={issuerId} onChange={(e) => { setIssuerId(e.target.value); setOut(null); }}>
+          {pub.registry.body.issuers.map((i: any) => <option key={i.issuerId} value={i.issuerId}>{i.name} ({i.issuerId})</option>)}
+        </select>
+        <label htmlFor="who">Holder</label>
+        <select id="who" value={profile} onChange={(e) => setProfile(e.target.value)}><option value="alice">Alice</option><option value="mallory">Mallory</option></select>
+        <label htmlFor="a1">{type === 1 ? "Date of birth (YYYYMMDD)" : type === 2 ? "Degree code" : "License type code"}</label>
+        <input id="a1" value={a1} onChange={(e) => setA1(e.target.value)} inputMode="numeric" />
+        {type !== 1 && (<><label htmlFor="a2">{type === 2 ? "Graduation date (YYYYMMDD)" : "Expiry date (YYYYMMDD)"}</label><input id="a2" value={a2} onChange={(e) => setA2(e.target.value)} inputMode="numeric" /></>)}
+        <div className="row mt"><button className="btn" onClick={go} disabled={!w}>Sign &amp; issue</button></div>
+        {err && <p className="err" role="alert">{err}</p>}
+        {pub.phase === "stolen" && <p className="small warn mt">The compromise has not been declared yet. A genuine issuance now is timestamped inside the theft window, so the recovery policy would quarantine it until re-attested.</p>}
+      </div>
+      <div className="card"><h2>Result</h2>{out ? <CredCard c={out} /> : <p className="muted small">Nothing issued yet.</p>}
+        {out && <p className="small muted">Added to the notary-anchored log. Use it from the Verify tab after switching to a wallet that holds all three types.</p>}</div></div>
+    </>
+  );
+}
+
+function Audit({ pub }: { pub: any }) {
+  return (
+    <>
+      <h1>Security &amp; audit</h1>
+      <p className="lead">Each verification leaves one record containing only public material: a verdict, per-step outcomes and issuer ids. No holder identity, attribute, credential commitment or proof witness is recorded.</p>
+      <div className="grid g2">
+        <div className="card"><h2>Verification log</h2>
+          {pub.audit.length === 0 ? <p className="muted small">No verifications yet.</p> : (
+            <div className="tablewrap"><table><thead><tr><th>Time</th><th>Id</th><th>Verdict</th><th>Issuers</th></tr></thead>
+              <tbody>{[...pub.audit].reverse().map((a: any) => (<tr key={a.auditId + a.t}><td className="mono">{a.t.slice(11, 19)}</td><td className="mono">{a.auditId}</td>
+                <td><span className={"badge " + (a.verdict === "accepted" ? "b-ok" : a.verdict === "quarantined" ? "b-warn" : "b-bad")}>{a.verdict}</span></td><td className="small">{a.issuers.join(", ")}</td></tr>))}</tbody></table></div>)}
+        </div>
+        <div className="card"><h2>Trust model and honest limits</h2>
+          <ul className="clean small">
+            <li><strong>Real:</strong> Groth16 proofs over the BN254 curve; EdDSA-Poseidon issuer signatures verified inside the circuit; Poseidon Merkle issuance logs; Ed25519-signed, hash-chained registry.</li>
+            <li><strong>Simulated:</strong> issuers, the notary and key custody all run in one demo server.</li>
+            <li><strong>Centralized:</strong> registry and status-list hosting. They are signed and versioned, so tampering is detectable, but this is not a decentralized network.</li>
+            <li><strong>Dev-only:</strong> the trusted setup has a single local contribution. A real deployment needs a multi-party ceremony.</li>
+            <li><strong>Leaks by design:</strong> issuer identity, revocation slot index and which notarized log root. Whole status lists are downloaded, so issuers do not learn which credential was checked.</li>
+          </ul></div>
+      </div>
+    </>
+  );
+}

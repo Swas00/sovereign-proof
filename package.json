@@ -5,7 +5,13 @@
   "main": "index.js",
   "scripts": {
     "test": "vitest run",
-    "server": "tsx packages/server/index.ts"
+    "server": "tsx packages/server/index.ts",
+    "web": "vite apps/web",
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm:server\" \"npm:web\"",
+    "build:web": "vite build apps/web",
+    "start": "vite build apps/web && tsx packages/server/index.ts",
+    "build:circuit": "./circuits/build.sh",
+    "e2e": "tsx scripts/e2e.ts"
   },
   "keywords": [],
   "author": "",
