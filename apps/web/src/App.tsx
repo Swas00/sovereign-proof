@@ -1,5 +1,6 @@
 import { type ReactElement, Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
-import { Check, CircleAlert, Eye, Landmark, Lock, ScrollText, ShieldCheck, Stamp, TriangleAlert, Wallet as WalletIcon, X } from "lucide-react";
+import { Check, CircleAlert, Eye, Landmark, Lock, Moon, ScrollText, ShieldCheck, Stamp, Sun, TriangleAlert, Wallet as WalletIcon, X } from "lucide-react";
+import { toggleTheme, useTheme } from "./theme";
 import { api } from "./api";
 import { proveInBrowser } from "./prove";
 import type { WireCred, WireRequest } from "../../../packages/core/wire";
@@ -33,6 +34,7 @@ const fmtDate = (n: string) => (n === "0" ? "-" : `${n.slice(0, 4)}-${n.slice(4,
 const short = (s: string) => `${s.slice(0, 8)}…${s.slice(-4)}`;
 
 export default function App() {
+  const theme = useTheme();
   const [route, setRoute] = useState(readRoute);
   useEffect(() => {
     const on = () => setRoute(readRoute());
@@ -57,6 +59,10 @@ export default function App() {
             <button key={k} aria-current={tab === k ? "page" : undefined} onClick={() => setTab(k)}>{NAV_ICON[k]}{l}</button>
           ))}
         </nav>
+        <button type="button" className="themebtn" onClick={toggleTheme} title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>
+          {theme === "dark" ? <Sun size={16} strokeWidth={1.8} aria-hidden /> : <Moon size={16} strokeWidth={1.8} aria-hidden />}
+        </button>
         <div className="mast-rule" aria-hidden="true" />
       </header>
       {error && <p className="err" role="alert">{error}</p>}

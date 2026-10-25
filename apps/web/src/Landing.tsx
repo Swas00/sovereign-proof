@@ -1,15 +1,17 @@
 import SculptureHero from "@/components/ui/liquid-sculpture-hero";
 import InkOrbitFeatures from "@/components/ui/ink-orbit-features";
 import { liveFeatureProps, usePublicState } from "./liveFeatures";
-
-const prefersDark = typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+import { toggleTheme, useTheme } from "./theme";
 
 export default function Landing() {
   // live data from the running API; null (unreachable) falls back to the static copy below
+  const theme = useTheme();
   const pub = usePublicState();
   const live = pub ? liveFeatureProps(pub) : null;
   return (
     <>
+      {/* The hero keeps its own switch; clicks on it also flip the site-wide theme, and the hero follows `theme` back. */}
+      <div onClick={(e) => { if ((e.target as HTMLElement).closest(".sh-theme")) toggleTheme(); }}>
       <SculptureHero
         brand="Sovereign Proof"
         navLinks={[
@@ -29,7 +31,7 @@ export default function Landing() {
         hint="Move across the form"
         hintTouch="Touch the form"
         backdropText="proof"
-        theme={prefersDark ? "dark" : "light"}
+        theme={theme}
         background="#E9E6E0"
         darkBackground="#121211"
         src="/hero/light.webp"
@@ -39,9 +41,10 @@ export default function Landing() {
         imageAlt="Abstract sculpture of interwoven metallic filaments and particles"
         loadFonts={false}
       />
+      </div>
       <div className="landing-features">
         <InkOrbitFeatures
-          theme="auto"
+          theme={theme}
           brand="Sovereign Proof"
           tag={live?.tag ?? "How it works"}
           title={"Prove the *claim,*\nnot the person."}
