@@ -2,6 +2,7 @@ import { type ReactElement, Suspense, lazy, useCallback, useEffect, useMemo, use
 import { Check, CircleAlert, Eye, Landmark, Lock, Moon, ScrollText, ShieldCheck, Stamp, Sun, TriangleAlert, Wallet as WalletIcon, X } from "lucide-react";
 import { toggleTheme, useTheme } from "./theme";
 import { ROUTE_ROLE, signedPost } from "./signer";
+import WaveMesh from "@/components/ui/wave-mesh";
 import { api } from "./api";
 import { proveInBrowser } from "./prove";
 import type { WireCred, WireRequest } from "../../../packages/core/wire";
@@ -36,6 +37,9 @@ const short = (s: string) => `${s.slice(0, 8)}…${s.slice(-4)}`;
 
 export default function App() {
   const theme = useTheme();
+  // Background field colours come from the site palette (page ground, dots, crest accent). Dots stay close to the ground colour so they
+  // never compete with text. The array must be memoised: WaveMesh rebuilds its canvas whenever the array identity changes.
+  const waveColors = useMemo<[string, string, string]>(() => (theme === "dark" ? ["#121211", "#4B4944", "#8E8A81"] : ["#E9E6E0", "#BEB8AB", "#6B675E"]), [theme]);
   const [route, setRoute] = useState(readRoute);
   useEffect(() => {
     const on = () => setRoute(readRoute());
@@ -51,6 +55,8 @@ export default function App() {
   const phaseLabel = pub ? ({ normal: "Normal operation", stolen: "Key stolen (undetected)", declared: "Compromise declared" } as any)[pub.phase] : "";
   if (route.view === "landing") return <Suspense fallback={null}><Landing /></Suspense>;
   return (
+    <>
+    <div className="app-bg" aria-hidden="true"><WaveMesh colors={waveColors} className="h-full w-full" /></div>
     <div className="wrap">
       <header>
         <div className="brand"><a className="brandlink" href="#" aria-label="Sovereign Proof overview"><Mark /> Sovereign Proof</a></div>
@@ -73,6 +79,7 @@ export default function App() {
         tab === "issue" ? <Issue pub={pub} refresh={refresh} /> : <Audit pub={pub} refresh={refresh} />}
       </main>
     </div>
+    </>
   );
 }
 

@@ -404,3 +404,6 @@ img,svg,canvas,video{max-width:100%}
 /* large and ultrawide screens: use the room, keep line lengths readable */
 @media (min-width:1800px){ .wrap{max-width:1360px} body{font-size:16px} }
 @media (min-width:2400px){ .wrap{max-width:1560px} body{font-size:17px} h1{font-size:76px} }
+
+/* animated wave-mesh behind every app page (not the landing hero). Fixed, below content, never intercepts the pointer. */
+.app-bg{position:fixed;inset:0;z-index:-1;pointer-events:none}
