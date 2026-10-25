@@ -1,7 +1,7 @@
 import { randomBytes, createHash, type KeyObject } from "node:crypto";
 import type { Crypto } from "./crypto";
 import { verifyProof, namedSignals, type ZkProof, type ProofRequest } from "./prover";
-import { acceptRegistry, findKey, type SignedRegistry } from "./registry";
+import { acceptRegistry, canonical, findKey, sha256hex, type SignedRegistry } from "./registry";
 import { evaluateEvidence } from "./incident";
 import type { Anchor } from "./notary";
 import { isRevoked, verifyStatusList, type StatusList } from "./status";
@@ -48,7 +48,11 @@ export interface VerifierContext {
   anchors: Anchor[]; // issuance-log roots anchored on the chain (or notarized, in unit tests)
   notaryPub: KeyObject;
   /** What the verifier itself read from the chain. When present the registry must match it. */
-  chain?: { ok: boolean; error?: string; blockNumber?: number; registry: { version: number; hash: string }[] };
+  chain?: {
+    ok: boolean; error?: string; blockNumber?: number; registry: { version: number; hash: string }[];
+    /** latest status-list record per issuer key id; when present a served list must match it (stops replay of an old signed list) */
+    status?: Record<string, { version: number; hash: string }>;
+  };
   statusLists: Map<string, StatusList>; // by issuer keyId; absent = status service unavailable
   nonces: NonceStore;
   now: number;
@@ -158,10 +162,17 @@ export async function verifyPresentation(p: ZkProof, req: VerifierRequest, ctx: 
     }
     const lp = { Ax: BigInt(hit.key.pub.Ax), Ay: BigInt(hit.key.pub.Ay) };
     if (!verifyStatusList(ctx.crypto, list, lp)) { add(id, label, "fail", "status list signature invalid"); continue; }
+    if (ctx.chain?.ok && ctx.chain.status) {
+      // A validly signed OLD list would pass the signature check; only the issuer's record on the chain exposes the rollback.
+      const rec = ctx.chain.status[keyId];
+      if (!rec) { add(id, label, "fail", "this status list is not recorded on the chain"); continue; }
+      if (list.version !== rec.version) { add(id, label, "fail", `stale status list: v${list.version} was served but the chain is at v${rec.version} (rollback)`); continue; }
+      if (sha256hex(canonical(list)) !== rec.hash) { add(id, label, "fail", `status list v${list.version} differs from the version the issuer recorded on the chain (altered)`); continue; }
+    }
     const idx = Number(s[r.status]);
     let rev: boolean;
     try { rev = isRevoked(list, idx); } catch { add(id, label, "fail", "status index outside the published list"); continue; }
-    add(id, label, rev ? "fail" : "pass", rev ? `credential slot is marked revoked in list v${list.version}` : `slot not revoked in signed list v${list.version} (whole list fetched, issuer learns nothing about which slot)`);
+    add(id, label, rev ? "fail" : "pass", rev ? `credential slot is marked revoked in list v${list.version}` : `slot not revoked in signed list v${list.version}${ctx.chain?.ok && ctx.chain.status ? ", which matches the issuer's record on the chain" : ""} (whole list fetched, issuer learns nothing about which slot)`);
   }
   return finish();
 }

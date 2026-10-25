@@ -326,3 +326,7 @@ tbody tr{transition:background-color .15s} tbody tr:hover{background:color-mix(i
   .sh-root a.sh-link:hover{text-decoration:underline;text-underline-offset:5px}
   select:hover:not(:disabled),input:hover{box-shadow:0 0 0 3px var(--accent-soft);border-color:var(--accent)}
 }
+
+/* refused attempts stand out in the change history */
+tr.row-rejected td{background:color-mix(in srgb,var(--bad) 8%,transparent)}
+tr.row-rejected td:first-child{box-shadow:inset 3px 0 0 var(--bad)}

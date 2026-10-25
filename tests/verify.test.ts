@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { buildInput, prove, type ZkProof } from "../packages/core/prover";
-import { buildWorld, CODES, DEPTH, T_LEGACY } from "../packages/core/fixtures";
+import { buildWorld, CODES, DEPTH, SIZE, T_LEGACY } from "../packages/core/fixtures";
+import { buildStatusList } from "../packages/core/status";
 import { NonceStore, verifyPresentation, type VerifierRequest } from "../packages/core/verify";
 import { CRED_TYPE } from "../packages/core/crypto";
 import { IssuanceLog } from "../packages/core/merkle";
-import { publishNext, acceptRegistry, adminKeyFromSeed } from "../packages/core/registry";
+import { publishNext, acceptRegistry, adminKeyFromSeed, canonical, sha256hex } from "../packages/core/registry";
 
 type W = Awaited<ReturnType<typeof buildWorld>>;
 let w: W; let base: ZkProof; let baseReq: VerifierRequest;
@@ -135,5 +136,39 @@ describe("registry vs the public chain", () => {
     const r = await run({ ok: false, error: "ECONNREFUSED", registry: [] });
     expect(r.verdict).toBe("rejected"); expect(step(r, "chain").detail).toContain("failing closed");
     expect(r.steps.map((s) => s.id)).not.toContain("zk"); // never reaches the proof when the trust root is unavailable
+  });
+});
+
+describe("status lists vs the chain (rollback protection)", () => {
+  const rec = (l: any) => ({ version: l.version, hash: sha256hex(canonical(l)) });
+  const statusOf = (lists: Map<string, any>) => Object.fromEntries([...lists].map(([k, l]) => [k, rec(l)]));
+  const chainWith = (status: any) => ({ ok: true, blockNumber: 9, registry: [{ version: 1, hash: w.registry.hash }], status });
+  const medId = () => w.keyIdOf(w.keys["med-board"]);
+  const revokedV2 = () => buildStatusList(w.c, w.keys["med-board"].prv, medId(), 2, SIZE, [3], T_LEGACY); // Alice's license slot is #3
+
+  it("passes when every served list matches the issuer's record on the chain", async () => {
+    const r = await verifyPresentation(base, baseReq, ctxFor(1001n, { chain: chainWith(statusOf(w.lists())) }));
+    expect(r.verdict).toBe("accepted"); expect(step(r, "status-license").detail).toContain("matches the issuer's record");
+  });
+  it("REJECTS a validly signed OLD list replayed to un-revoke a license (only the chain can tell)", async () => {
+    const served = w.lists(); // v1: slot #3 NOT revoked, correctly signed
+    const chain = chainWith({ ...statusOf(served), [medId()]: rec(revokedV2()) }); // the issuer has since published v2 revoking it
+    const r = await verifyPresentation(base, baseReq, ctxFor(1001n, { chain, statusLists: served }));
+    expect(r.verdict).toBe("rejected"); expect(step(r, "status-license").detail).toContain("stale status list");
+    expect(step(r, "status-degree").outcome).toBe("pass"); // unrelated issuers unaffected
+  });
+  it("...whereas without a chain record the same replay is ACCEPTED (this is the gap the chain closes)", async () => {
+    const r = await verifyPresentation(base, baseReq, ctxFor(1001n, { statusLists: w.lists() }));
+    expect(r.verdict).toBe("accepted");
+  });
+  it("rejects a list whose content differs from the recorded hash for the same version", async () => {
+    const served = w.lists();
+    const r = await verifyPresentation(base, baseReq, ctxFor(1001n, { chain: chainWith({ ...statusOf(served), [medId()]: { version: 1, hash: "c".repeat(64) } }), statusLists: served }));
+    expect(r.verdict).toBe("rejected"); expect(step(r, "status-license").detail).toContain("differs");
+  });
+  it("rejects a list the issuer never recorded on the chain", async () => {
+    const served = w.lists(); const partial = statusOf(served); delete partial[medId()];
+    const r = await verifyPresentation(base, baseReq, ctxFor(1001n, { chain: chainWith(partial), statusLists: served }));
+    expect(r.verdict).toBe("rejected"); expect(step(r, "status-license").detail).toContain("not recorded on the chain");
   });
 });

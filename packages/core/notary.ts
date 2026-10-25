@@ -13,7 +13,7 @@ export interface Anchor {
   anchoredAt: string; // ISO, set by the NOTARY (or by the chain's block time), never by the issuer
   sig: string;
   /** Present when the anchor was read from the blockchain: the block time is then the evidence, not a signature. */
-  chain?: { blockNumber: number; txHash: string };
+  chain?: { blockNumber: number; txHash: string; sender?: string; senderLabel?: string; prevRoot?: string };
 }
 const bodyOf = (a: Omit<Anchor, "sig">) => ({ issuerKeyId: a.issuerKeyId, root: a.root, leafCount: a.leafCount, anchoredAt: a.anchoredAt });
 

@@ -40,7 +40,7 @@ app.get("/api/public", wrap(async (_q, r) => {
     phase: st.phase, outage: st.outage, catalog: CATALOG,
     registry: st.registry, history: st.history.map((h) => ({ version: h.body.version, issuedAt: h.body.issuedAt, hash: h.hash, note: h.body.note })),
     keyStatus, anchors: snap.anchors.map((a) => ({ ...a, sig: undefined })), summary: snap.ok ? st.summary(snap.anchors) : undefined,
-    chain: { ok: snap.ok, error: snap.error, network: snap.network, rpc: snap.rpc, contract: snap.contract, blockNumber: snap.blockNumber, blockTime: snap.blockTime, registry: snap.registry, simulatedOutage: chain.forceOffline },
+    chain: { ok: snap.ok, error: snap.error, network: snap.network, rpc: snap.rpc, contract: snap.contract, blockNumber: snap.blockNumber, blockTime: snap.blockTime, registry: snap.registry, audit: st.enrichAudit(snap.audit).reverse(), simulatedOutage: chain.forceOffline },
     revokedSlots: Object.fromEntries(Object.entries(st.revoked).map(([k, v]) => [k, v.length])),
     events: st.log.slice(-40), audit: st.audit.slice(-30),
   });
@@ -53,7 +53,13 @@ app.get("/api/demo/wallet/:profile", wrap((q, r) => {
 app.post("/api/demo/steal", wrap(async (_q, r) => { await st.steal(); r.json({ ok: true }); }));
 app.post("/api/demo/declare", wrap(async (_q, r) => { await st.declare(); r.json({ ok: true }); }));
 app.post("/api/demo/reissue", wrap(async (q, r) => { await st.reissue(String(q.body.profile)); r.json({ ok: true }); }));
-app.post("/api/demo/revoke-license", wrap((q, r) => { st.revokeLicense(String(q.body.profile)); r.json({ ok: true }); }));
+app.post("/api/demo/revoke-license", wrap(async (q, r) => { await st.revokeLicense(String(q.body.profile)); r.json({ ok: true }); }));
+// Accountability demos: an outsider's attempt (recorded on the chain), stored-data tampering (detected by comparison with the chain), and recovery.
+app.post("/api/demo/attempt-unauthorised", wrap(async (_q, r) => { await st.attemptUnauthorised(); r.json({ ok: true }); }));
+app.post("/api/demo/tamper-registry", wrap((_q, r) => { st.tamperRegistry(); r.json({ ok: true }); }));
+app.post("/api/demo/rollback-status", wrap((_q, r) => { st.rollbackStatus(); r.json({ ok: true }); }));
+app.post("/api/demo/restore", wrap((_q, r) => { st.restore(); r.json({ ok: true }); }));
+app.get("/api/integrity", wrap(async (_q, r) => { r.json(await st.integrity()); }));
 app.post("/api/demo/outage", wrap((q, r) => { st.outage = !!q.body.on; st.event("status", st.outage ? "status service taken offline" : "status service restored"); r.json({ ok: true }); }));
 app.post("/api/demo/chain-outage", wrap((q, r) => { chain.forceOffline = !!q.body.on; st.event("chain", chain.forceOffline ? "chain taken offline (simulated): verifiers fail closed" : "chain back online"); r.json({ ok: true }); }));
 app.post("/api/demo/reset", wrap(async (_q, r) => { chain.forceOffline = false; await chain.ping(3, 500); st = await createState(chain); r.json({ ok: true }); }));
@@ -112,7 +118,8 @@ app.post("/api/verifier/verify", wrap(async (q, r) => {
   const req: VerifierRequest = { ...reqToProof(wire), requiredIssuers: wire.requiredIssuers, onStatusUnavailable: wire.onStatusUnavailable };
   const result: VerificationResult = await verifyPresentation({ proof: proof.proof, publicSignals: proof.publicSignals.map(String) }, req, {
     crypto: st.w.c, registry: st.registry, pinnedRegistry: st.pinned, adminPub: st.w.admin.pub, anchors: snap.ok ? snap.anchors : [], notaryPub: st.w.notary.pub,
-    chain: { ok: snap.ok, error: snap.error, blockNumber: snap.blockNumber, registry: snap.registry.map((r) => ({ version: r.version, hash: r.hash })) },
+    chain: { ok: snap.ok, error: snap.error, blockNumber: snap.blockNumber, registry: snap.registry.map((r) => ({ version: r.version, hash: r.hash })),
+      status: Object.fromEntries(Object.entries(snap.status).map(([k, a]) => [k, { version: a[a.length - 1].version, hash: a[a.length - 1].hash }])) },
     statusLists: st.lists(), nonces: st.nonces, now: Date.now(),
   });
   if (result.steps[0]?.id === "registry" && result.steps[0].outcome === "pass") st.pinned = st.registry;

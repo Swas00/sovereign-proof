@@ -69,7 +69,7 @@ export default function App() {
       <main key={tab} className="page">
       {!pub ? <p className="muted">Connecting to the demo registry…</p> : tab === "verify" ? <Verify pub={pub} refresh={refresh} /> :
         tab === "wallet" ? <Wallet pub={pub} /> : tab === "trust" ? <Trust pub={pub} refresh={refresh} /> :
-        tab === "issue" ? <Issue pub={pub} refresh={refresh} /> : <Audit pub={pub} />}
+        tab === "issue" ? <Issue pub={pub} refresh={refresh} /> : <Audit pub={pub} refresh={refresh} />}
       </main>
     </div>
   );
@@ -324,12 +324,13 @@ function Issue({ pub, refresh }: { pub: any; refresh: () => void }) {
   );
 }
 
-function Audit({ pub }: { pub: any }) {
+function Audit({ pub, refresh }: { pub: any; refresh: () => void }) {
   return (
     <>
       <h1>Security &amp; <em>audit</em></h1>
-      <p className="lead">Each verification leaves one record containing only public material: a verdict, per-step outcomes and issuer ids. No holder identity, attribute, credential commitment or proof witness is recorded.</p>
-      <div className="grid g2">
+      <p className="lead">Every change to the trust data is written to the chain with who made it, when, and the previous value. Refused attempts are recorded too. Each verification also leaves one record of public material only: a verdict, per-step outcomes and issuer ids.</p>
+      <ChangeHistory pub={pub} refresh={refresh} />
+      <div className="grid g2 mt">
         <div className="card"><h2>Verification log</h2>
           {pub.audit.length === 0 ? <p className="muted small">No verifications yet.</p> : (
             <div className="tablewrap"><table><thead><tr><th>Time</th><th>Id</th><th>Verdict</th><th>Issuers</th></tr></thead>
@@ -342,6 +343,7 @@ function Audit({ pub }: { pub: any }) {
             <li><strong>Simulated:</strong> issuers and key custody run in one demo server, and the blockchain is a local development chain (Hardhat), not a public network. Its clock is steered to replay the demo timeline.</li>
             <li><strong>Centralized:</strong> registry and status-list hosting, and the one local chain node. Registry versions are signed and their hashes are on the chain, so tampering is detectable, but the demo itself is not a decentralized network.</li>
             <li><strong>Dev-only:</strong> the trusted setup has a single local contribution. A real deployment needs a multi-party ceremony.</li>
+            <li><strong>Attribution limit:</strong> a change made through the contract is attributed to an account and time. An edit to stored data <em>outside</em> the contract is detected and explained (what changed, what the chain recorded), but the chain cannot name who made it; that needs authenticated access logs on the server.</li>
             <li><strong>Leaks by design:</strong> issuer identity, revocation slot index and which notarized log root. Whole status lists are downloaded, so issuers do not learn which credential was checked.</li>
           </ul></div>
       </div>
@@ -379,5 +381,64 @@ function ChainPanel({ chain, anchors }: { chain: any; anchors: any[] }) {
         </ul>
       </div>
     </div>
+  );
+}
+
+const clip = (v: string, n = 70) => (v.length > n ? v.slice(0, n) + "…" : v);
+
+function ChangeHistory({ pub, refresh }: { pub: any; refresh: () => void }) {
+  const [report, setReport] = useState<any>(null);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const audit: any[] = pub.chain?.audit ?? [];
+  const check = useCallback(async () => { setErr(""); try { setReport(await api("/api/integrity")); } catch (e: any) { setErr(e.message); } }, []);
+  const run = (label: string, path: string, then: "check" | "none" = "check") => async () => {
+    setErr(""); setBusy(label);
+    try { await api(path, {}); await refresh(); if (then === "check") await check(); } catch (e: any) { setErr(e.message); } finally { setBusy(""); }
+  };
+  return (
+    <>
+      <div className="card"><h2>Change history, from the chain</h2>
+        {!pub.chain?.ok ? <p className="err" role="alert" style={{ marginTop: 0 }}>The chain cannot be read, so there is no trustworthy history to show. {pub.chain?.error}</p> : audit.length === 0 ? <p className="muted small">Nothing recorded yet.</p> : (
+          <div className="tablewrap"><table>
+            <thead><tr><th>When (block time)</th><th>Who</th><th>What</th><th>Previous → new</th><th>Block · tx</th></tr></thead>
+            <tbody>{audit.map((e) => (
+              <tr key={e.id} className={e.kind === "rejected" ? "row-rejected" : undefined}>
+                <td className="mono">{e.time.slice(0, 19).replace("T", " ")}</td>
+                <td><div>{e.actorLabel}</div><div className="mono muted">{short(e.actor)}</div></td>
+                <td>{e.kind === "rejected" && <span className="badge b-bad" style={{ marginRight: 6 }}>refused</span>}{e.action}{e.targetLabel && <div className="small muted">{e.targetLabel}</div>}{e.note && <div className="small muted">{e.note}</div>}</td>
+                <td className="small">{e.changes?.length ? e.changes.slice(0, 4).map((c: any, i: number) => <div key={i}><span className="muted">{c.path}</span> <span className="mono">{clip(c.from, 28)}</span> → <span className="mono">{clip(c.to, 28)}</span></div>) :
+                  e.kind === "rejected" ? <span className="muted">no change was made</span> : e.action.startsWith("Anchoring account") ? <span>{e.previous ?? "(none)"} → {e.next}</span> : e.previous || e.next ? <span className="mono">{e.previous ? short(e.previous) : "(none)"} → {e.next ? short(e.next) : "-"}</span> : "-"}
+                  {e.changes?.length > 4 && <div className="muted">+{e.changes.length - 4} more</div>}</td>
+                <td className="mono">#{e.blockNumber}<div className="muted">{short(e.txHash)}</div></td>
+              </tr>))}</tbody></table></div>)}
+        <p className="small muted mt">Only hashes and short public notes are on the chain. The readable "previous → new" is shown only when the archived copy re-hashes to exactly what the chain recorded.</p>
+      </div>
+      <div className="grid g2 mt">
+        <div className="card"><h2>Try to break it</h2>
+          <p className="small muted" style={{ marginTop: 0 }}>Each action is something an attacker might do. Then see what the system recorded or detected.</p>
+          <div className="row">
+            <button className="btn ghost small" disabled={!!busy} onClick={run("attempt", "/api/demo/attempt-unauthorised", "none")}>Outsider tries to change data</button>
+            <button className="btn ghost small" disabled={!!busy} onClick={run("tamper", "/api/demo/tamper-registry")}>Edit the stored registry</button>
+            <button className="btn ghost small" disabled={!!busy} onClick={run("replay", "/api/demo/rollback-status")}>Replay an old revocation list</button>
+            <button className="btn ghost small" disabled={!!busy} onClick={run("restore", "/api/demo/restore")}>Restore from verified archive</button>
+          </div>
+          <p className="small muted mt">Replaying a list needs a revocation to exist first (Trust tab → Revoke Alice's license). Verify tab → generate a proof afterwards to see the verifier refuse tampered data.</p>
+          {err && <p className="err" role="alert">{err}</p>}
+        </div>
+        <div className="card"><h2>Integrity check</h2>
+          <div className="row"><button className="btn small" onClick={check} disabled={!!busy}>Compare served data with the chain</button>
+            {report && report.ok !== false && <span className={"badge " + (report.clean ? "b-ok" : "b-bad")}>{report.clean ? "clean" : "problems found"}</span>}</div>
+          {report?.ok === false && <p className="err" role="alert">{report.error}</p>}
+          {report?.findings && <ul className="clean small mt" style={{ listStyle: "none", paddingLeft: 0 }}>{report.findings.map((f: any, i: number) => (
+            <li key={i} style={{ margin: "10px 0" }}>
+              <span className={f.ok ? "ok" : "bad"}>{f.ok ? <Check size={13} aria-hidden /> : <X size={13} aria-hidden />}</span> <strong>{f.subject}</strong>: {f.summary}
+              {f.chain && <div className="muted">chain: {f.chain.by}, {String(f.chain.at).slice(0, 19).replace("T", " ")}{f.chain.block !== undefined && <> · block #{f.chain.block}</>}</div>}
+              {f.changes?.map((c: any, j: number) => <div key={j} className="mono" style={{ marginLeft: 12 }}>{c.path}: {clip(c.from, 36)} → {clip(c.to, 36)}</div>)}
+              {f.previous && <div className="muted">{f.previous}</div>}
+            </li>))}</ul>}
+        </div>
+      </div>
+    </>
   );
 }
