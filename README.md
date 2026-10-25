@@ -8,10 +8,12 @@ Theme 4 / Problem 3: decentralized portable proofs.
 npm install
 npm run dev          # local chain :8545, API :8787, web http://localhost:5173 (all three, one command)
 npm test             # 56 tests (crypto, ZK, verifier, incident, chain checks, diffs)
-npm run chain:test   # 45 contract checks against the running local chain (resets it)
+npm run chain:test   # 49 contract checks against the running local chain (resets it)
 npm run e2e          # full incident storyline over HTTP with real proofs (needs `npm run dev` running)
+node scripts/wallet-e2e.mjs   # 30 wallet checks in headless Chrome (needs `npm run dev` or `npm start` running)
 ```
 `npm start` builds the web app and serves chain + API + UI (UI from :8787). If you only run the API, verifiers fail closed and the Trust page says why.
+The API listens on this computer only, because the demo controls take no signature. To open it from a phone on the same Wi-Fi, start it with `HOST=0.0.0.0` and stop it afterwards.
 Circuit artifacts are committed. To rebuild them (about 20 min, needs `circom2` from npm): `npm run build:circuit`.
 
 ## The blockchain: an accountable audit ledger
