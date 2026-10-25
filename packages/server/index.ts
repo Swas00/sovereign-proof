@@ -12,6 +12,7 @@ import { ACCOUNT, Chain } from "./chain";
 import { AuthError, authenticate } from "./auth";
 import { canonical } from "../core/canonical";
 import { sha256hex } from "../core/registry";
+import { receiptText } from "../core/receipt";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -54,6 +55,9 @@ const audited = (detail: string, need: null | ((req: Req) => string), fn: (req: 
     if (!res.headersSent) res.status(denied ? e.status : 400).json({ error: e.message ?? "bad request" });
   }
 };
+/** True if some verification this server ran hashes to this on-chain receipt (so the wallet's claim matches a real audit record). */
+const receiptMatches = (receiptHex: string, version: number) =>
+  st.audit.some((a: any) => a.steps0 && a.registryVersion === version && sha256hex(receiptText({ auditId: a.auditId, verdict: a.verdict, steps: a.steps0, registryVersion: a.registryVersion })) === receiptHex);
 const dec = (v: unknown, name: string, max = FIELD): bigint => {
   if (typeof v !== "string" || !/^\d{1,80}$/.test(v)) throw new Error(`${name} must be a decimal string`);
   const n = BigInt(v); if (n >= max) throw new Error(`${name} out of range`); return n;
@@ -73,12 +77,17 @@ app.get("/api/public", wrap(async (_q, r) => {
     phase: st.phase, outage: st.outage, catalog: CATALOG,
     registry: st.registry, history: st.history.map((h) => ({ version: h.body.version, issuedAt: h.body.issuedAt, hash: h.hash, note: h.body.note })),
     keyStatus, anchors: snap.anchors.map((a) => ({ ...a, sig: undefined })), summary: snap.ok ? st.summary(snap.anchors) : undefined,
+    receipts: snap.receipts.map((x) => ({ ...x, matchesAudit: receiptMatches(x.receipt, x.registryVersion) })),
     chain: { ok: snap.ok, error: snap.error, network: snap.network, rpc: snap.rpc, contract: snap.contract, blockNumber: snap.blockNumber, blockTime: snap.blockTime, registry: snap.registry, audit: st.enrichAudit(snap).reverse(), auditHeads: snap.auditHeads, simulatedOutage: chain.forceOffline },
     accessLog: st.accessLog.entries.slice(-60).reverse(),
     revokedSlots: Object.fromEntries(Object.entries(st.revoked).map(([k, v]) => [k, v.length])),
     events: st.log.slice(-40), audit: st.audit.slice(-30),
   });
 }));
+
+// Browser-wallet support: network details for MetaMask, a local-only faucet for free test ETH, and receipt cross-checking.
+app.get("/api/chain/info", wrap(async (_q, r) => { if (!chain.online) throw new Error("chain unreachable"); r.json(await chain.info()); }));
+app.post("/api/wallet/fund", audited("sent test ETH to a wallet (local faucet)", null, async (q, r) => { r.json(await chain.fund(String(q.body?.address ?? ""))); }));
 
 app.get("/api/demo/wallet/:profile", wrap((q, r) => {
   const w = st.wallets[q.params.profile]; if (!w) throw new Error("unknown profile");
@@ -161,8 +170,9 @@ app.post("/api/verifier/verify", wrap(async (q, r) => {
   });
   if (result.steps[0]?.id === "registry" && result.steps[0].outcome === "pass") st.pinned = st.registry;
   // Audit entries hold only public material: verdict, per-step outcomes and issuer ids.
-  st.audit.push({ t: new Date().toISOString(), auditId: result.auditId, verdict: result.verdict, issuers: result.disclosed.issuers.map((i) => i.issuerId), steps: result.steps.map((s) => `${s.id}:${s.outcome}`) });
-  r.json(result);
+  const registryVersion = st.registry.body.version;
+  st.audit.push({ t: new Date().toISOString(), auditId: result.auditId, verdict: result.verdict, registryVersion, steps0: result.steps.map((s) => ({ id: s.id, outcome: s.outcome })), issuers: result.disclosed.issuers.map((i) => i.issuerId), steps: result.steps.map((s) => `${s.id}:${s.outcome}`) });
+  r.json({ ...result, registryVersion });
 }));
 
 const dist = resolve(ROOT, "apps/web/dist");

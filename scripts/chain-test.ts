@@ -106,6 +106,30 @@ ok("every entry has block, transaction, time and actor", audit.every((e) => e.bl
 ok("feed is in chain order", audit.every((e, i) => i === 0 || audit[i - 1].blockNumber <= e.blockNumber));
 ok("changes carry a previous value", audit.find((e) => e.action === "Registry v2 published")!.previous === v1.hash && audit.find((e) => e.action === "Status list v2 published")!.previous === h1);
 
+console.log("--- verification receipts: any wallet, its own gas, recorded once");
+const RC = "0x" + "ab".repeat(32);
+let before = await chain.snapshot();
+const walletBal0 = await chain.balanceOf(await addr(ACCOUNT.stranger));
+let rr = await w(ACCOUNT.stranger, "2026-11-01T00:00:00Z", (c) => c.recordVerification(RC, 3, true));
+ok("an account with no role CAN record a receipt (it is open by design)", !rr.rejected);
+snap = await chain.snapshot();
+const rcpt = snap.receipts.find((r) => "0x" + r.receipt === RC);
+ok("the receipt names the wallet that sent it, the registry version and the verdict", !!rcpt && rcpt.verifier === await addr(ACCOUNT.stranger) && rcpt.registryVersion === 3 && rcpt.accepted === true, JSON.stringify(rcpt));
+ok("the sender paid gas", (await chain.balanceOf(await addr(ACCOUNT.stranger))) < walletBal0);
+ok("the receipt appears in the audit feed under the wallet's address", snap.audit.some((e) => e.action === "Verification receipt anchored" && e.actor === rcpt!.verifier));
+rr = await w(ACCOUNT["uni-x"], "2026-11-01T00:05:00Z", (c) => c.recordVerification(RC, 3, false));
+ok("the same receipt cannot be recorded twice, by anyone (the attempt is recorded)", rr.rejected && /already recorded/.test(rr.reason ?? ""), JSON.stringify(rr));
+ok("the original author and verdict are unchanged", (await chain.snapshot()).receipts.find((r) => "0x" + r.receipt === RC)!.accepted === true);
+rr = await w(ACCOUNT.stranger, "2026-11-01T00:10:00Z", (c) => c.recordVerification("0x" + "00".repeat(32), 1, true));
+ok("an empty receipt is refused", rr.rejected);
+ok("a receipt write does not grant any other authority", (await w(ACCOUNT.stranger, "2026-11-01T00:15:00Z", (c) => c.publishRegistry(9, JUNK, JUNK, "x", "0x", "0x"))).rejected);
+const info = await chain.info();
+ok("chain info tells a wallet how to join (id, rpc, contract, roles)", info.chainId === 31337 && info.chainIdHex === "0x7a69" && info.contract === chain.address && info.roles.length === 6 && !info.roles.some((r) => r.role === "stranger"));
+const f = await chain.fund("0x000000000000000000000000000000000000dEaD");
+ok("the local faucet sends test ETH", Number(f.balance) >= 1);
+let threw = ""; try { await chain.fund("not-an-address"); } catch (e: any) { threw = e.message; }
+ok("the faucet refuses a malformed address", /valid address/.test(threw), threw);
+
 console.log("--- reset");
 await chain.reset();
 snap = await chain.snapshot();

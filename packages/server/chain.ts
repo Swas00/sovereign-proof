@@ -1,4 +1,4 @@
-import { Contract, ContractFactory, JsonRpcProvider, JsonRpcSigner, toBeHex, toUtf8Bytes, toUtf8String, zeroPadValue } from "ethers";
+import { Contract, ContractFactory, JsonRpcProvider, JsonRpcSigner, formatEther, isAddress, parseEther, toBeHex, toUtf8Bytes, toUtf8String, zeroPadValue } from "ethers";
 import { readFileSync } from "node:fs";
 import type { Anchor } from "../core/notary";
 import { canonical, type SignedRegistry } from "../core/registry";
@@ -28,9 +28,10 @@ export interface AuditEntry {
   id: string; kind: "ok" | "rejected"; blockNumber: number; txHash: string; time: string; actor: string; actorLabel: string;
   action: string; target?: string; previous?: string; next?: string; note?: string;
 }
+export interface Receipt { receipt: string; verifier: string; verifierLabel: string; registryVersion: number; accepted: boolean; time: string; blockNumber: number; txHash: string }
 export interface ChainSnapshot {
   ok: boolean; error?: string; network: string; rpc: string; contract: string; blockNumber: number; blockTime?: string;
-  registry: ChainRegistryRecord[]; anchors: Anchor[]; status: Record<string, ChainStatusRecord[]>; audit: AuditEntry[]; auditHeads: AuditHead[];
+  registry: ChainRegistryRecord[]; anchors: Anchor[]; receipts: Receipt[]; status: Record<string, ChainStatusRecord[]>; audit: AuditEntry[]; auditHeads: AuditHead[];
 }
 export class ChainRejected extends Error {}
 
@@ -134,6 +135,33 @@ export class Chain {
     return this.write(ACCOUNT.auditor, null, (c) => c.anchorAuditHead(seq, "0x" + headHex), true);
   }
 
+  /** What a browser wallet needs to join this chain. */
+  async info() {
+    const id = Number(await this.provider.send("eth_chainId", []));
+    const local = id === 31337;
+    return { chainId: id, chainIdHex: "0x" + id.toString(16), name: local ? "Sovereign Proof local chain" : `Chain ${id}`, rpc: RPC_URL, symbol: "ETH", local, contract: this.address,
+      faucet: local, roles: Object.entries(ACCOUNT).filter(([r]) => r !== "stranger").map(([role, i]) => ({ role, address: this.addressOf(i), label: LABELS[i] })) };
+  }
+  /** Raw read: ethers' getBalance resolves "latest" from a cached block number and can return a stale balance. */
+  async balanceOf(address: string): Promise<bigint> { return BigInt(await this.provider.send("eth_getBalance", [address, "latest"])); }
+  private lastFund = new Map<string, number>();
+  /** Local-chain faucet: sends test ETH from an unused dev account, like a testnet faucet would. Refuses on any other chain. */
+  async fund(address: string): Promise<{ txHash: string; amount: string; balance: string }> {
+    if (!isAddress(address)) throw new Error("not a valid address");
+    if (!(await this.info()).local) throw new Error("the built-in faucet only exists on the local dev chain");
+    const key = address.toLowerCase(), last = this.lastFund.get(key) ?? 0;
+    if (Date.now() - last < 5000) throw new Error("slow down: one request every few seconds per address");
+    this.lastFund.set(key, Date.now());
+    const AMOUNT = parseEther("1");
+    const bal = await this.balanceOf(address);
+    if (bal >= parseEther("5")) throw new Error("this wallet already has plenty of test ETH");
+    const r = await this.serial(() => this.at(null, async () => {
+      const tx = await this.signers[7].sendTransaction({ to: address, value: AMOUNT });
+      const receipt = await tx.wait(); this.invalidate(); return receipt!.hash;
+    }));
+    return { txHash: r, amount: "1", balance: formatEther(await this.balanceOf(address)) };
+  }
+
   // --- demo: an outsider tries to change things. The contract records each attempt permanently. ---
   async attemptUnauthorised(atIso: string, targets: { keyId: string; registryVersion: number; registryPrevHash: string }) {
     const junk = "0x" + "de".repeat(32);
@@ -191,12 +219,17 @@ export class Chain {
           case "AuditorSet":
             audit.push({ ...common, kind: "ok", time: iso(a.time), actor: a.by, actorLabel: this.labelOf(a.by), action: "Audit-log anchoring account set", previous: a.previousAuditor === "0x0000000000000000000000000000000000000000" ? undefined : this.labelOf(a.previousAuditor), next: this.labelOf(a.auditor) });
             break;
+          case "VerificationRecorded": {
+            const verifierLabel = this.labelOf(a.verifier) === "Unknown account (not authorised)" ? "Self-custodied wallet" : this.labelOf(a.verifier);
+            receipts.push({ receipt: hex(a.receipt), verifier: a.verifier, verifierLabel, registryVersion: Number(a.registryVersion), accepted: !!a.accepted, time: iso(a.time), blockNumber: l.blockNumber, txHash: l.transactionHash });
+            audit.push({ ...common, kind: "ok", time: iso(a.time), actor: a.verifier, actorLabel: verifierLabel, action: "Verification receipt anchored", next: hex(a.receipt), note: `${a.accepted ? "accepted" : "not accepted"} under registry v${Number(a.registryVersion)}` });
+            break; }
           case "Rejected":
             audit.push({ ...common, kind: "rejected", time: iso(a.time), actor: a.actor, actorLabel: this.labelOf(a.actor), action: String(a.action), target: dec(a.target), note: String(a.reason) });
             break;
         }
       }
-      const snap: ChainSnapshot = { ...base, ok: true, blockNumber: tip, blockTime: iso(parseInt(head.timestamp, 16)), registry, anchors, status, audit, auditHeads };
+      const snap: ChainSnapshot = { ...base, ok: true, blockNumber: tip, blockTime: iso(parseInt(head.timestamp, 16)), registry, anchors, receipts, status, audit, auditHeads };
       this.cache = { at: Date.now(), snap }; this.online = true; this.error = "";
       return snap;
     } catch (e: any) {
