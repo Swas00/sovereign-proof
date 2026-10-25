@@ -18,7 +18,7 @@ async function session(wallet, label, fn) {
   const w = wallet.connect(provider);
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage(); await page.setViewport({ width: 1280, height: 900 });
-  let chain = "0x1", added = false; const log = [];
+  let chain = "0x1", added = false, failSend = true; const log = [];
   await page.exposeFunction("__eth", async (method, params) => {
     log.push(method);
     try {
@@ -29,7 +29,7 @@ async function session(wallet, label, fn) {
         case "wallet_addEthereumChain": if (params[0].chainId !== "0x7a69" || !params[0].rpcUrls.includes(RPC)) return { error: { code: -32602, message: "bad chain params" } }; added = true; chain = params[0].chainId; return { result: null };
         case "eth_getBalance": return { result: await provider.send("eth_getBalance", params) };
         case "personal_sign": return { result: await w.signMessage(getBytes(params[0])) };
-        case "eth_sendTransaction": { const t = await w.sendTransaction({ to: params[0].to, data: params[0].data }); return { result: t.hash }; }
+        case "eth_sendTransaction": { if (failSend) { failSend = false; return { error: { code: -32603, message: "nonce too high" } }; } const t = await w.sendTransaction({ to: params[0].to, data: params[0].data }); return { result: t.hash }; }
         case "eth_getTransactionReceipt": return { result: await provider.send("eth_getTransactionReceipt", params) };
         default: return { error: { code: -32601, message: "unsupported in test: " + method } };
       }
@@ -64,6 +64,9 @@ await session(fresh, "fresh wallet (no role)", async ({ page, click, text, waitT
   await page.keyboard.press("Escape");
   await click("Restore from the chain");
   ok("UI shows the refusal", await waitText("not authorised"));
+  ok("banner says this address holds no role", await waitText("holds no role"));
+  ok("checklist ticked connect, funding and the refused action from real state", await waitText("4 of 6 done"));
+  { const t = (await text()).toLowerCase(); ok("checklist lists the refused attempt under this address", t.includes("what the system recorded about") && t.includes("denied")); }
   const pub = await api("/api/public");
   const e = pub.accessLog[0];
   ok("access log names the wallet's real address as actor", e.actor.toLowerCase() === fresh.address.toLowerCase() && e.outcome === "denied", JSON.stringify(e).slice(0, 200));
@@ -74,12 +77,16 @@ await session(fresh, "fresh wallet (no role)", async ({ page, click, text, waitT
   await click("Generate proof");
   ok("verification completes", await waitText("Anchor this result from your wallet", 60000));
   await click("Anchor as");
+  ok("a MetaMask nonce error is explained in plain words", await waitText("Clear activity tab data"));
+  await click("Anchor as");
   ok("receipt anchored (block, gas, fee shown)", await waitText("fee ", 20000) && (await text()).includes("Block"));
   const after = await api("/api/public");
   const r = after.receipts[0];
   ok("chain holds one receipt authored by the wallet", after.receipts.length === 1 && r.verifier.toLowerCase() === fresh.address.toLowerCase(), JSON.stringify(after.receipts));
   ok("the receipt matches the verifier's own audit record", r.matchesAudit === true);
   ok("wallet paid gas (balance fell)", (await provider.getBalance(fresh.address)) < 10n ** 18n);
+  await page.goto(APP + "/#app/audit", { waitUntil: "networkidle0" });
+  ok("checklist now shows the anchored receipt (5 of 6)", await waitText("5 of 6 done"));
   ok("the receipt is in the chain audit feed with the wallet as actor", after.chain.audit.some((a) => a.action === "Verification receipt anchored" && a.actor.toLowerCase() === fresh.address.toLowerCase()));
 });
 
@@ -88,6 +95,8 @@ await session(new Wallet(ADMIN_KEY), "wallet holding the admin role", async ({ p
   await page.goto(APP + "/#app/audit", { waitUntil: "networkidle0" });
   await click("Connect"); await click("Connect MetaMask");
   ok("role recognised", await waitText("Registry admin"));
+  await page.keyboard.press("Escape");
+  ok("banner names the role the wallet holds", await waitText("holds the role"));
   await page.keyboard.press("Escape");
   await click("Restore from the chain");
   await sleep(1500);
