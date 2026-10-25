@@ -14,10 +14,14 @@ export interface WalletState {
   installed: boolean; account: string | null; chainId: number | null; balance: string | null; info: ChainInfo | null;
   /** "wallet": privileged actions are signed by the connected account. "demo": by the built-in role keys (the default). */
   signWith: "wallet" | "demo"; busy: string; error: string;
+  /** Every account connected in this tab (lowercase). Lets the walkthrough keep its progress when the user switches accounts. */
+  seen: string[];
 }
 
 const KEY = "sp-wallet";
-const initial: WalletState = { installed: false, account: null, chainId: null, balance: null, info: null, signWith: "demo", busy: "", error: "" };
+const SEEN_KEY = "sp-seen";
+const loadSeen = (): string[] => { try { const v = JSON.parse(sessionStorage.getItem(SEEN_KEY) ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : []; } catch { return []; } };
+const initial: WalletState = { installed: false, account: null, chainId: null, balance: null, info: null, signWith: "demo", busy: "", error: "", seen: [] };
 let state: WalletState = initial;
 const listeners = new Set<() => void>();
 const set = (p: Partial<WalletState>) => { state = { ...state, ...p }; listeners.forEach((l) => l()); };
@@ -76,7 +80,9 @@ export async function ensureNetwork(): Promise<void> {
 
 async function adopt(accounts: string[]) {
   if (!accounts.length) { set({ account: null, balance: null, signWith: "demo" }); try { localStorage.removeItem(KEY); } catch { /* ignore */ } return; }
-  set({ account: accounts[0] });
+  const a = accounts[0], seen = state.seen.includes(a.toLowerCase()) ? state.seen : [...state.seen, a.toLowerCase()];
+  try { sessionStorage.setItem(SEEN_KEY, JSON.stringify(seen)); } catch { /* private mode: progress just will not survive a reload */ }
+  set({ account: a, seen });
   await Promise.all([syncChainId(), refreshBalance()]);
 }
 
@@ -154,7 +160,7 @@ export async function anchorReceipt(receiptHex: string, registryVersion: number,
 /** Wire up wallet events once, and quietly restore a previous connection (eth_accounts never opens a popup). */
 if (typeof window !== "undefined") {
   const p = provider();
-  set({ installed: !!p });
+  set({ installed: !!p, seen: loadSeen() });
   if (p) {
     p.on?.("accountsChanged", (a: string[]) => { void adopt(a); });
     p.on?.("chainChanged", () => { void syncChainId().then(refreshBalance); });
