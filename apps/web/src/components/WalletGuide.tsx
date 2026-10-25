@@ -44,7 +44,7 @@ export default function WalletGuide({ pub }: { pub: any }) {
             <div className="tablewrap"><table><thead><tr><th>Time</th><th>Who</th><th>What</th><th>Outcome</th></tr></thead>
               <tbody>
                 {mine.slice(0, 6).map((e: any) => (<tr key={e.seq}><td className="mono">{e.time.slice(11, 19)}</td><td className="mono small">{shortAddr(e.actor)}</td><td className="small">{e.detail}</td><td><span className={"badge " + (e.outcome === "ok" ? "b-ok" : e.outcome === "denied" ? "b-bad" : "b-warn")}>{e.outcome}</span></td></tr>))}
-                {receipts.map((r: any) => (<tr key={r.receipt}><td className="mono">{r.time.slice(11, 19)}</td><td className="mono small">{shortAddr(r.verifier)}</td><td className="small">anchored a verification receipt (block #{r.blockNumber})</td><td><span className="badge b-ok">on-chain</span></td></tr>))}
+                {receipts.map((r: any) => (<tr key={r.receipt}><td className="mono" title="Chain entries are ordered by block; the demo chain's clock is simulated, so a clock time would not match the rows above">block #{r.blockNumber}</td><td className="mono small">{shortAddr(r.verifier)}</td><td className="small">anchored a verification receipt</td><td><span className="badge b-ok">on-chain</span></td></tr>))}
               </tbody></table></div>
           )}
         </>
