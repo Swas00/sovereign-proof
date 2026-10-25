@@ -8,7 +8,7 @@ Theme 4 / Problem 3: decentralized portable proofs.
 npm install
 npm run dev          # local chain :8545, API :8787, web http://localhost:5173 (all three, one command)
 npm test             # 56 tests (crypto, ZK, verifier, incident, chain checks, diffs)
-npm run chain:test   # 34 contract checks against the running local chain (resets it)
+npm run chain:test   # 45 contract checks against the running local chain (resets it)
 npm run e2e          # full incident storyline over HTTP with real proofs (needs `npm run dev` running)
 ```
 `npm start` builds the web app and serves chain + API + UI (UI from :8787). If you only run the API, verifiers fail closed and the Trust page says why.
@@ -52,12 +52,22 @@ Measured on a deliberately weak profile (4x CPU slowdown, slow-4G network), prod
 
 Honest limits: these are headless-Chrome emulations on one machine, not real devices (Safari/iOS and Firefox are untested); the sculpture's real-GPU cost could only be measured with software rendering, which is why the governor exists; the first proof still downloads a 22 MB proving key (cached afterwards).
 
+## Browser wallet (MetaMask)
+A wallet is free to create and the key stays in the user's browser extension. The header's **Connect** control uses it for two things:
+1. **Signing actions as yourself.** With "My wallet" selected, each authority button (declare, issue, revoke, restore) is signed by your wallet with `personal_sign` (EIP-191, same message the demo keys sign). The server recovers your address and checks it against the role table. A fresh wallet has no role, so the action is refused and the attempt is logged under your real address, in the access log whose head is anchored on the chain. Import a demo role key (panel, "Act as a demo role") and the same button succeeds, attributed to that role.
+2. **Paying to anchor a result.** After a verification, "Anchor this result from your wallet" sends a transaction to `recordVerification` on `TrustAnchor`. The wallet pays the gas, the contract stamps the author and block time, and only a hash of the outcome goes on-chain (audit id, verdict, step outcomes, registry version). The chain page lists each receipt and whether it matches the verifier's own audit record. This is a statement by a wallet, not proof that the verdict is true.
+
+Cost: on the local chain gas is paid in free test ETH ("Get free test ETH" calls a built-in faucet that exists only on chain id 31337, and the app shows the exact gas used and fee after each transaction). The app adds the network to MetaMask itself (`wallet_addEthereumChain`). With no wallet installed everything still works on the demo keys.
+`node scripts/wallet-e2e.mjs` drives the site in headless Chrome with a stand-in for MetaMask (an EIP-1193 object backed by a real ethers wallet on the real chain). It checks our code paths: connect, add network, faucet, signing, refusal logged under the wallet's address, receipt transaction with gas, and fallback with no wallet. It does not drive MetaMask's own popups.
+
 ## What is real
 - Groth16 proof (BN254, circom + snarkjs) of: three issuer EdDSA-Poseidon signatures, one holder, age over N, required degree, unexpired license, Poseidon Merkle inclusion in each issuer's issuance log. About 46k constraints, proved in the browser.
 - Signed, hash-chained trust registry (Ed25519), signed status lists, and issuance-log roots plus registry hashes recorded on a local EVM chain.
 - Verifier pipeline with replay protection, policy binding, per-credential trust and revocation decisions.
 
 ## What is simulated or limited
+- The wallet integration is tested against a stand-in provider, not the real MetaMask extension. A public testnet (Sepolia) is not supported: the demo steers the chain clock with `evm_setNextBlockTimestamp`, which only a dev node offers. Anchoring receipts alone would work on any EVM chain, but that has not been tried.
+- Anyone can record a receipt (that is the point of the open function), so a spammer can add noise. Receipts carry no authority, and the server marks which ones match its own audit record.
 - Issuers and key custody run in one demo server, and the chain is a single local node. The registry and status lists are centralized, signed and versioned (hashes on the chain); the demo is not a decentralized network.
 - Trusted setup is a single local contribution: dev only.
 - The verifier sees issuer identity, each credential's revocation slot, and which notarized log root it belongs to.
