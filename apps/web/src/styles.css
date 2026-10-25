@@ -62,7 +62,9 @@ header{display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding:20px 0 0;
 .brandlink svg{color:var(--ink)}
 .brandlink:hover svg{color:var(--accent)} .brandlink svg{transition:color .2s}
 .phase{display:inline-flex;align-items:center;gap:8px;font:500 11.5px var(--mono);letter-spacing:.02em;color:var(--muted)}
-.phase{flex:1 1 0;min-width:96px} .phase .dot{flex:none} .phase-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.phase .dot{flex:none}
+/* only where the header is crowded on one row; narrower screens let the label wrap in full */
+@media (min-width:1181px){.phase{flex:1 1 0;min-width:96px} .phase-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 .phase .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
 .phase[data-phase="stolen"] .dot{background:var(--warn)} .phase[data-phase="declared"] .dot{background:var(--bad)}
 header nav{display:flex;gap:2px;flex-wrap:wrap;margin-left:auto}
