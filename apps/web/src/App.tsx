@@ -3,6 +3,9 @@ import { Check, CircleAlert, Eye, Landmark, Lock, Moon, ScrollText, ShieldCheck,
 import { toggleTheme, useTheme } from "./theme";
 import { ROUTE_ROLE, signedPost } from "./signer";
 import WaveMesh from "@/components/ui/wave-mesh";
+import WalletPill from "@/components/WalletPill";
+import { anchorReceipt, connect, getWallet, shortAddr, useWalletState } from "./wallet";
+import { receiptText } from "../../../packages/core/receipt";
 import { api } from "./api";
 import { proveInBrowser } from "./prove";
 import type { WireCred, WireRequest } from "../../../packages/core/wire";
@@ -66,6 +69,7 @@ export default function App() {
             <button key={k} aria-current={tab === k ? "page" : undefined} onClick={() => setTab(k)}>{NAV_ICON[k]}{l}</button>
           ))}
         </nav>
+        <WalletPill />
         <button type="button" className="themebtn" onClick={toggleTheme} title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
           aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>
           {theme === "dark" ? <Sun size={16} strokeWidth={1.8} aria-hidden /> : <Moon size={16} strokeWidth={1.8} aria-hidden />}
@@ -190,12 +194,12 @@ function Verify({ pub, refresh }: { pub: any; refresh: () => void }) {
           {err && <p className="err" role="alert">{err}</p>}
         </section>
       </div>
-      {res && <Result res={res} ms={ms} />}
+      {res && <Result res={res} ms={ms} refresh={refresh} />}
     </>
   );
 }
 
-function Result({ res, ms }: { res: any; ms: number }) {
+function Result({ res, ms, refresh }: { res: any; ms: number; refresh: () => void }) {
   const head = { accepted: [<Check size={26} strokeWidth={2.2} />, "Verified", "All requirements proven; issuers trusted; nothing revoked."], quarantined: [<TriangleAlert size={24} strokeWidth={2} />, "Quarantined", "Cryptographically valid, but trust cannot be established under the incident policy."], rejected: [<X size={26} strokeWidth={2.2} />, "Rejected", "At least one requirement failed."] }[res.verdict as "accepted"];
   return (
     <section className="mt" aria-live="polite">
@@ -203,6 +207,7 @@ function Result({ res, ms }: { res: any; ms: number }) {
         <span className="big" aria-hidden>{head[0]}</span>
         <div><div className="big">{head[1]}</div><div className="small muted">{head[2]} Audit id <span className="mono">{res.auditId}</span> · total {(ms / 1000).toFixed(1)}s incl. proving · proof ≈ {(res.proofBytes / 1024).toFixed(1)} KB</div></div>
       </div>
+      <AnchorReceipt res={res} refresh={refresh} />
       <div className="grid g2">
         <div className="card"><h2>Why: step by step</h2>
           <ol className="steps">{res.steps.map((s: any) => (
@@ -216,6 +221,45 @@ function Result({ res, ms }: { res: any; ms: number }) {
         </div>
       </div>
     </section>
+  );
+}
+
+/** Lets the verifier record this outcome on the chain from their own wallet (the wallet pays the gas). Only a hash goes on-chain. */
+function AnchorReceipt({ res, refresh }: { res: any; refresh: () => void }) {
+  const w = useWalletState();
+  const [busy, setBusy] = useState(false), [err, setErr] = useState(""), [done, setDone] = useState<any>(null);
+  useEffect(() => { setDone(null); setErr(""); }, [res.auditId]);
+  async function go() {
+    setErr(""); setBusy(true);
+    try {
+      if (!getWallet().account) await connect();
+      if (!getWallet().account) throw new Error(getWallet().error || "Connect a wallet to anchor the receipt.");
+      const { sha256, toUtf8Bytes } = await import("ethers");
+      const hash = sha256(toUtf8Bytes(receiptText({ auditId: res.auditId, verdict: res.verdict, steps: res.steps, registryVersion: res.registryVersion }))).slice(2);
+      const out = await anchorReceipt(hash, res.registryVersion, res.verdict === "accepted");
+      setDone({ ...out, hash }); await refresh();
+    } catch (e: any) { setErr(e?.code === 4001 ? "You rejected the transaction in the wallet." : String(e?.shortMessage ?? e?.message ?? e).slice(0, 200)); } finally { setBusy(false); }
+  }
+  return (
+    <div className="card receipt">
+      <div className="row">
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <h2 style={{ marginBottom: 4 }}>Anchor this result from your wallet</h2>
+          <p className="small muted" style={{ margin: 0 }}>Records a hash of this outcome on the chain under your address, with the block time. No credential data goes on-chain. It costs a small gas fee, paid from the wallet{w.info?.local ? " (free test ETH on this local chain)" : ""}.</p>
+        </div>
+        <button type="button" className="btn small" disabled={busy || !!done} onClick={go}>{busy ? "Confirm in your wallet…" : done ? "Anchored" : w.account ? `Anchor as ${shortAddr(w.account)}` : "Connect wallet and anchor"}</button>
+      </div>
+      {err && <p className="err small" role="alert" style={{ marginBottom: 0 }}>{err}</p>}
+      {done && (
+        <div className="kv small mt">
+          <span>Receipt hash</span><span className="mono">{short(done.hash)}</span>
+          <span>Transaction</span><span className="mono">{short(done.txHash)}</span>
+          <span>Block</span><span className="mono">#{done.block}</span>
+          <span>Gas</span><span>{Number(done.gasUsed).toLocaleString()} units · fee {Number(done.costEth).toFixed(6)} {w.info?.symbol ?? "ETH"}</span>
+          {done.rejected && <><span>Refused</span><span className="bad">{done.rejected}</span></>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -257,7 +301,7 @@ function Trust({ pub, refresh }: { pub: any; refresh: () => void }) {
         </div>
         {err && <p className="err" role="alert">{err}</p>}
       </div>
-      <ChainPanel chain={pub.chain} anchors={pub.anchors} />
+      <ChainPanel chain={pub.chain} anchors={pub.anchors} receipts={pub.receipts ?? []} />
       <div className="grid g2 mt">
         <div className="card"><h2>Issuer keys (registry v{pub.registry.body.version})</h2>
           <div className="tablewrap"><table><thead><tr><th>Issuer</th><th>Epoch</th><th>Status</th><th>Key id</th></tr></thead>
@@ -360,7 +404,7 @@ function Audit({ pub, refresh }: { pub: any; refresh: () => void }) {
   );
 }
 
-function ChainPanel({ chain, anchors }: { chain: any; anchors: any[] }) {
+function ChainPanel({ chain, anchors, receipts }: { chain: any; anchors: any[]; receipts: any[] }) {
   if (!chain) return null;
   const online = chain.ok;
   return (
@@ -376,6 +420,13 @@ function ChainPanel({ chain, anchors }: { chain: any; anchors: any[] }) {
             <h3 className="mt">Registry versions on the chain</h3>
             <div className="tablewrap"><table><thead><tr><th>Ver</th><th>Hash</th><th>Block</th><th>Transaction</th></tr></thead>
               <tbody>{chain.registry.map((r: any) => (<tr key={r.version}><td>v{r.version}</td><td className="mono">{short(r.hash)}</td><td className="mono">#{r.blockNumber}</td><td className="mono">{r.txHash ? short(r.txHash) : "-"}</td></tr>))}</tbody></table></div>
+            <h3 className="mt">Verification receipts from wallets</h3>
+            {receipts.length === 0 ? <p className="small muted" style={{ margin: 0 }}>None yet. Run a verification, then use "Anchor this result from your wallet".</p> : (
+              <div className="tablewrap"><table><thead><tr><th>Wallet</th><th>Result</th><th>Block</th><th>Audit record</th></tr></thead>
+                <tbody>{receipts.slice().reverse().map((x: any) => (<tr key={x.receipt}><td><span className="mono">{short(x.verifier)}</span><div className="small muted">{x.verifierLabel}</div></td>
+                  <td>{x.accepted ? "accepted" : "not accepted"}<div className="small muted">registry v{x.registryVersion}</div></td><td className="mono">#{x.blockNumber}</td>
+                  <td><span className={"badge " + (x.matchesAudit ? "b-ok" : "b-warn")}>{x.matchesAudit ? "matches" : "no match"}</span></td></tr>))}</tbody></table></div>
+            )}
           </>
         ) : (
           <p className="err" role="alert" style={{ marginTop: 0 }}>{chain.error ?? "chain unreachable"}. Verifiers fail closed: with no public record to check, nothing is accepted.{chain.simulatedOutage ? "" : " Start the node with npm run chain, then press Reset demo."}</p>
@@ -432,9 +483,9 @@ function ChangeHistory({ pub, refresh }: { pub: any; refresh: () => void }) {
               try {
                 await api("/api/demo/attempt-unauthorised", {}); // writes straight to the chain from an unknown account
                 // ...and the API: unsigned, a stranger's key, and a real account acting outside its role. Each must be refused and logged.
-                await signedPost("/api/demo/declare", {}, null).catch(() => undefined);
-                await signedPost("/api/demo/declare", {}, "stranger").catch(() => undefined);
-                await signedPost("/api/demo/declare", {}, "med-board").catch(() => undefined);
+                await signedPost("/api/demo/declare", {}, null, true).catch(() => undefined);
+                await signedPost("/api/demo/declare", {}, "stranger", true).catch(() => undefined);
+                await signedPost("/api/demo/declare", {}, "med-board", true).catch(() => undefined);
                 await refresh();
               } catch (e: any) { setErr(e.message); } finally { setBusy(""); }
             }}>Outsider tries to change data</button>
