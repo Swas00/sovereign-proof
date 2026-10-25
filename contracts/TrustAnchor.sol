@@ -15,6 +15,10 @@ pragma solidity ^0.8.20;
  *  4. Access-log heads (the auditor account only): the head hash of the server's hash-chained access log after each
  *     entry, so the log cannot be rewritten without contradicting the chain.
  *
+ *  5. Verification receipts (ANYONE, from their own wallet): a verifier records the hash of a verification outcome. The caller pays
+ *     the gas, and msg.sender is the permanent author. This is a signed-by-wallet statement ("this wallet ran this check at this
+ *     time"), not proof the verdict is true; it is cross-checked against the verifier's own audit record off-chain.
+ *
  * Registry bodies and status lists are published WITH their content, and the contract checks sha256(content) == hash.
  * The chain therefore holds the exact previous value of everything it hashes, independent of any server archive.
  *
@@ -34,6 +38,8 @@ contract TrustAnchor {
     address public auditor; // the account that anchors access-log heads
     bytes32[] private auditHeads;
     bytes32[] private anchoredKeys;
+    mapping(bytes32 => address) public receiptBy; // receipt hash => the wallet that recorded it
+    uint256 public receiptCount;
     mapping(bytes32 => bool) private seenKey;
 
     event RegistryPublished(uint32 indexed version, bytes32 hash, bytes32 prevHash, uint64 time, address indexed publisher, string note, bytes content, bytes extra);
@@ -42,6 +48,7 @@ contract TrustAnchor {
     event AuditorSet(address indexed auditor, address previousAuditor, uint64 time, address indexed by);
     event RootAnchored(bytes32 indexed keyId, bytes32 root, uint32 leafCount, bytes32 prevRoot, uint64 time, address indexed sender);
     event AnchorerAuthorised(bytes32 indexed keyId, address indexed anchorer, address previousAnchorer, uint64 time, address indexed by);
+    event VerificationRecorded(bytes32 indexed receipt, address indexed verifier, uint32 registryVersion, bool accepted, uint64 time);
     event Rejected(address indexed actor, string action, bytes32 indexed target, string reason, uint64 time);
 
 
@@ -106,6 +113,15 @@ contract TrustAnchor {
         if (seq != uint64(auditHeads.length + 1)) return _reject("anchorAuditHead", head, "not the next consecutive log sequence number");
         auditHeads.push(head);
         emit AuditHeadAnchored(seq, head, uint64(block.timestamp), msg.sender);
+        return true;
+    }
+    // Open to any wallet: the verifier pays the gas, the contract stamps the author and the block time. Each receipt can be recorded once.
+    function recordVerification(bytes32 receipt, uint32 registryVersion, bool accepted) external returns (bool) {
+        if (receipt == bytes32(0)) return _reject("recordVerification", receipt, "empty receipt hash");
+        if (receiptBy[receipt] != address(0)) return _reject("recordVerification", receipt, "this receipt was already recorded");
+        receiptBy[receipt] = msg.sender;
+        receiptCount += 1;
+        emit VerificationRecorded(receipt, msg.sender, registryVersion, accepted, uint64(block.timestamp));
         return true;
     }
     function auditHeadCount() external view returns (uint256) { return auditHeads.length; }
