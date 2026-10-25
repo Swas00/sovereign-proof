@@ -17,6 +17,25 @@
 | 6 | **Verify** tab: create a request, generate the proof, press **Anchor this result from your wallet**, confirm the fee in MetaMask. | Block, transaction, gas used and fee. The receipt then appears on the chain panel as "matches". | "I paid gas to put a hash of this outcome on the chain under my address. No credential data goes on-chain." |
 | 7 | **Trust** tab, press **Outsider tries to change data** (optional). | Refused attempts recorded on the chain with the actor. | "Even failed attempts leave a permanent record." |
 
+## No real money: what guarantees it
+You can say each of these and point at where it is enforced.
+
+| Guarantee | Enforced by | Checked by |
+|---|---|---|
+| The contract cannot hold or move money | `TrustAnchor` has no payable function, no `receive` and no `fallback`. The chain refuses any ETH sent to it. | `npm run chain:test` sends ETH both ways and confirms the contract balance stays zero |
+| The app never sends value | Every transaction carries `value: 0x0` | `wallet-e2e` inspects the transaction handed to the wallet |
+| The app only transacts on the local test chain | Before any transaction it checks the server's chain id and the wallet's chain id are both 31337, and that a contract exists at the target | `wallet-e2e` runs a wallet that stays on Ethereum mainnet: no transaction is offered and nothing reaches the chain |
+| The fee is bounded | Gas is capped at 200,000 units | `wallet-e2e` |
+| The ETH here has no value | Chain 31337 runs on your computer. The faucet exists only on that chain and refuses anywhere else. | `chain:test`, plus the "Test network. No real money." marker in the wallet panel |
+| Signing cannot spend | Authority actions use `personal_sign` on a plain text message, which cannot move funds | the signed text is shown in MetaMask |
+| Other devices cannot reach the demo controls | The API listens on this computer only. Phone testing needs `HOST=0.0.0.0`, which prints that it is reachable. | start-up message |
+
+Habits that keep it that way:
+- Use a separate browser profile (or a throwaway wallet) for the demo. Do not import a wallet that holds real funds.
+- The demo role keys are public. On a real network, anything sent to those addresses is taken within seconds by bots. The panel turns red and says so if a role account is ever used off the test chain.
+- Do not start the server with `HOST=0.0.0.0` on a shared network during judging.
+- If MetaMask ever shows a network other than "Sovereign Proof local chain" when you press Anchor, the app will refuse and say nothing was sent.
+
 ## If something goes wrong
 - **"nonce too high" or a stuck transaction.** MetaMask remembers your transaction count, and the demo chain resets. In MetaMask: Settings, Advanced, **Clear activity tab data**. Do this after every **Reset demo** or node restart.
 - **No popup appears.** Click the MetaMask icon in the toolbar; a request may be waiting. The app says so if one is already open.
