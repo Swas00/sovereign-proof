@@ -11,6 +11,7 @@ npm test             # 56 tests (crypto, ZK, verifier, incident, chain checks, d
 npm run chain:test   # 49 contract checks against the running local chain (resets it)
 npm run e2e          # full incident storyline over HTTP with real proofs (needs `npm run dev` running)
 node scripts/wallet-e2e.mjs   # 30 wallet checks in headless Chrome (needs `npm run dev` or `npm start` running)
+node scripts/wallet-buttons.mjs # clicks every demo and wallet button in headless Chrome and checks its effect (37 checks)
 ```
 `npm start` builds the web app and serves chain + API + UI (UI from :8787). If you only run the API, verifiers fail closed and the Trust page says why.
 The API listens on this computer only, because the demo controls take no signature. To open it from a phone on the same Wi-Fi, start it with `HOST=0.0.0.0` and stop it afterwards.
