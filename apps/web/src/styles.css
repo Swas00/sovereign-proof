@@ -179,3 +179,19 @@ tbody tr{transition:background-color .15s} tbody tr:hover{background:color-mix(i
   header nav button{white-space:nowrap;padding:8px 10px}
   .card{padding:18px} .verdict{padding:18px}
 }
+
+/* ── landing "how it works" section: the third-party component's greyscale tokens mapped onto this palette (scoped, no edits to the component) ── */
+.landing-features .ib-root{--ib-sans:var(--sans);--ib-mono:var(--mono);transition:none}
+.landing-features .ib-root[data-theme="light"]{
+  --ib-page:#E9E6E0; --ib-hatch:rgba(21,21,20,.055); --ib-paper:#F4F2ED; --ib-card:#EFECE6; --ib-raise:#FBFAF7;
+  --ib-ink:#151514; --ib-soft:#47453F; --ib-muted:#6B675E; --ib-faint:#7C786E; --ib-line:#D6D1C6; --ib-line-strong:#ADA797; --ib-bracket:#ADA797;
+  --ib-inv:#151514; --ib-inv-ink:#F4F2ED;
+}
+.landing-features .ib-root[data-theme="dark"]{
+  --ib-page:#121211; --ib-hatch:rgba(241,239,234,.045); --ib-paper:#1A1A18; --ib-card:#1F1F1D; --ib-raise:#232321;
+  --ib-ink:#F1EFEA; --ib-soft:#C2BEB5; --ib-muted:#8E8A81; --ib-faint:#77736A; --ib-line:#2E2D2A; --ib-line-strong:#47453F; --ib-bracket:#5A5750;
+  --ib-inv:#F1EFEA; --ib-inv-ink:#121211;
+}
+/* the app's global h2/h3 styles must not leak into the component's headings */
+.landing-features .ib-root :is(h2,h3){font-family:var(--ib-sans);text-transform:none;color:inherit;margin:0}
+.landing-features .ib-root .ib-card h3{letter-spacing:-.005em}
