@@ -1,4 +1,5 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactElement, Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { Check, CircleAlert, Eye, Landmark, Lock, ScrollText, ShieldCheck, Stamp, TriangleAlert, Wallet as WalletIcon, X } from "lucide-react";
 import { api } from "./api";
 import { proveInBrowser } from "./prove";
 import type { WireCred, WireRequest } from "../../../packages/core/wire";
@@ -13,7 +14,20 @@ function readRoute(): { view: "landing" | "app"; tab?: Tab } {
   const t = h.split("/")[1] as Tab | undefined;
   return { view: "app", tab: t && TABS.includes(t) ? t : undefined };
 }
-const ICON: Record<string, string> = { pass: "✓", fail: "✕", quarantine: "⚠", warn: "!" };
+const ICON: Record<string, ReactElement> = {
+  pass: <Check size={15} strokeWidth={2.4} aria-hidden />, fail: <X size={15} strokeWidth={2.4} aria-hidden />,
+  quarantine: <TriangleAlert size={15} strokeWidth={2.2} aria-hidden />, warn: <CircleAlert size={15} strokeWidth={2.2} aria-hidden />,
+};
+const NAV_ICON: Record<Tab, ReactElement> = {
+  verify: <ShieldCheck size={16} strokeWidth={1.8} aria-hidden />, wallet: <WalletIcon size={16} strokeWidth={1.8} aria-hidden />,
+  trust: <Landmark size={16} strokeWidth={1.8} aria-hidden />, issue: <Stamp size={16} strokeWidth={1.8} aria-hidden />, audit: <ScrollText size={16} strokeWidth={1.8} aria-hidden />,
+};
+// Two overlapping rings: what a proof discloses is only the overlap.
+const Mark = () => (
+  <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+    <circle cx="9.5" cy="13" r="7" stroke="currentColor" strokeWidth="1.6" /><circle cx="16.5" cy="13" r="7" stroke="currentColor" strokeWidth="1.6" />
+  </svg>
+);
 const CLS: Record<string, string> = { pass: "ok", fail: "bad", quarantine: "warn", warn: "warn" };
 const fmtDate = (n: string) => (n === "0" ? "-" : `${n.slice(0, 4)}-${n.slice(4, 6)}-${n.slice(6, 8)}`);
 const short = (s: string) => `${s.slice(0, 8)}…${s.slice(-4)}`;
@@ -36,18 +50,21 @@ export default function App() {
   return (
     <div className="wrap">
       <header>
-        <div className="brand"><a href="#" aria-label="Sovereign Proof overview" style={{ color: "inherit", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 10 }}><span className="logo">◆</span> Sovereign Proof</a></div>
-        {pub && <span className="phase" aria-live="polite">Registry v{pub.registry.body.version} · {phaseLabel}</span>}
+        <div className="brand"><a className="brandlink" href="#" aria-label="Sovereign Proof overview"><Mark /> Sovereign Proof</a></div>
+        {pub && <span className="phase" data-phase={pub.phase} aria-live="polite"><i className="dot" aria-hidden="true" />Registry v{pub.registry.body.version} · {phaseLabel}</span>}
         <nav aria-label="Main">
           {([["verify", "Verify"], ["wallet", "Wallet"], ["trust", "Trust & incident"], ["issue", "Issue"], ["audit", "Audit"]] as const).map(([k, l]) => (
-            <button key={k} aria-current={tab === k ? "page" : undefined} onClick={() => setTab(k)}>{l}</button>
+            <button key={k} aria-current={tab === k ? "page" : undefined} onClick={() => setTab(k)}>{NAV_ICON[k]}{l}</button>
           ))}
         </nav>
+        <div className="mast-rule" aria-hidden="true" />
       </header>
       {error && <p className="err" role="alert">{error}</p>}
+      <main key={tab} className="page">
       {!pub ? <p className="muted">Connecting to the demo registry…</p> : tab === "verify" ? <Verify pub={pub} refresh={refresh} /> :
         tab === "wallet" ? <Wallet pub={pub} /> : tab === "trust" ? <Trust pub={pub} refresh={refresh} /> :
         tab === "issue" ? <Issue pub={pub} refresh={refresh} /> : <Audit pub={pub} />}
+      </main>
     </div>
   );
 }
@@ -65,10 +82,10 @@ function CredCard({ c, selected }: { c: WireCred; selected?: boolean }) {
       <div className="t">{c.label}</div>
       <div className="muted small">Issued by {c.issuerId} · stored only in your wallet</div>
       <div className="kv">
-        {c.role === "id" && (<><span>Name</span><span>{c.private?.name ?? "(hidden)"} <em className="tag-priv">private</em></span><span>Home address</span><span>{c.private?.address ?? "(hidden)"} <em className="tag-priv">private</em></span><span>Date of birth</span><span>{fmtDate(f.a1)} <em className="tag-priv">private</em></span></>)}
-        {c.role === "degree" && (<><span>Degree code</span><span>{f.a1} <em className="tag-priv">private</em></span><span>Graduated</span><span>{fmtDate(f.a2)} <em className="tag-priv">private</em></span></>)}
-        {c.role === "license" && (<><span>License type</span><span>{f.a1} <em className="tag-priv">private</em></span><span>Expires</span><span>{fmtDate(f.a2)} <em className="tag-priv">private</em></span></>)}
-        <span>Status slot</span><span>#{f.statusIndex} <em className="tag-pub">shared with verifier</em></span>
+        {c.role === "id" && (<><span>Name</span><span>{c.private?.name ?? "(hidden)"} <em className="tag-priv"><Lock size={11} aria-hidden />private</em></span><span>Home address</span><span>{c.private?.address ?? "(hidden)"} <em className="tag-priv"><Lock size={11} aria-hidden />private</em></span><span>Date of birth</span><span>{fmtDate(f.a1)} <em className="tag-priv"><Lock size={11} aria-hidden />private</em></span></>)}
+        {c.role === "degree" && (<><span>Degree code</span><span>{f.a1} <em className="tag-priv"><Lock size={11} aria-hidden />private</em></span><span>Graduated</span><span>{fmtDate(f.a2)} <em className="tag-priv"><Lock size={11} aria-hidden />private</em></span></>)}
+        {c.role === "license" && (<><span>License type</span><span>{f.a1} <em className="tag-priv"><Lock size={11} aria-hidden />private</em></span><span>Expires</span><span>{fmtDate(f.a2)} <em className="tag-priv"><Lock size={11} aria-hidden />private</em></span></>)}
+        <span>Status slot</span><span>#{f.statusIndex} <em className="tag-pub"><Eye size={11} aria-hidden />shared with verifier</em></span>
       </div>
     </div>
   );
@@ -115,7 +132,7 @@ function Verify({ pub, refresh }: { pub: any; refresh: () => void }) {
   const degLabel = pub.catalog.degrees[0].label, licLabel = pub.catalog.licenses[0].label;
   return (
     <>
-      <h1>Prove it without exposing it</h1>
+      <h1>Prove it without <em>exposing it</em></h1>
       <p className="lead">An employer needs three facts at once. The holder proves all three with a single zero-knowledge proof, so the employer never sees a name, birth date, address or transcript.</p>
       <div className="grid g2">
         <section className="card" aria-labelledby="v-h">
@@ -165,7 +182,7 @@ function Verify({ pub, refresh }: { pub: any; refresh: () => void }) {
 }
 
 function Result({ res, ms }: { res: any; ms: number }) {
-  const head = { accepted: ["✓", "Verified", "All requirements proven; issuers trusted; nothing revoked."], quarantined: ["⚠", "Quarantined", "Cryptographically valid, but trust cannot be established under the incident policy."], rejected: ["✕", "Rejected", "At least one requirement failed."] }[res.verdict as "accepted"];
+  const head = { accepted: [<Check size={26} strokeWidth={2.2} />, "Verified", "All requirements proven; issuers trusted; nothing revoked."], quarantined: [<TriangleAlert size={24} strokeWidth={2} />, "Quarantined", "Cryptographically valid, but trust cannot be established under the incident policy."], rejected: [<X size={26} strokeWidth={2.2} />, "Rejected", "At least one requirement failed."] }[res.verdict as "accepted"];
   return (
     <section className="mt" aria-live="polite">
       <div className={"verdict v-" + res.verdict}>
@@ -193,7 +210,7 @@ function Wallet({ pub }: { pub: any }) {
   const w = useWallet(profile, pub.phase);
   return (
     <>
-      <h1>Holder wallet</h1>
+      <h1>Holder <em>wallet</em></h1>
       <p className="lead">Credentials live with the holder, not in any institution's database. This view is private to the holder; none of the attribute values below are ever sent to a verifier.</p>
       <label htmlFor="wp">Wallet</label>
       <select id="wp" value={profile} onChange={(e) => setProfile(e.target.value)} style={{ maxWidth: 360 }}>
@@ -212,7 +229,7 @@ function Trust({ pub, refresh }: { pub: any; refresh: () => void }) {
   const badge = (st: string) => <span className={"badge " + (st === "active" ? "b-ok" : st === "compromised" ? "b-warn" : "b-bad")}>{st}</span>;
   return (
     <>
-      <h1>Trust registry &amp; key-compromise incident</h1>
+      <h1>Trust registry &amp; <em>key-compromise incident</em></h1>
       <p className="lead">Simulate the 48-hour university key theft and watch the trust decisions change. Run the same verification before and after on the Verify tab.</p>
       <div className="card"><h2>Incident controls</h2>
         <div className="row">
@@ -271,7 +288,7 @@ function Issue({ pub, refresh }: { pub: any; refresh: () => void }) {
   }
   return (
     <>
-      <h1>Issue a credential</h1>
+      <h1>Issue a <em>credential</em></h1>
       <p className="lead">The issuer signs a salted commitment to the claims, logs the commitment, and the notary timestamps the log. The issuer receives only the holder's pseudonymous id, never the holder secret.</p>
       <div className="grid g2"><div className="card">
         <label htmlFor="is">Issuer</label>
@@ -302,7 +319,7 @@ function Issue({ pub, refresh }: { pub: any; refresh: () => void }) {
 function Audit({ pub }: { pub: any }) {
   return (
     <>
-      <h1>Security &amp; audit</h1>
+      <h1>Security &amp; <em>audit</em></h1>
       <p className="lead">Each verification leaves one record containing only public material: a verdict, per-step outcomes and issuer ids. No holder identity, attribute, credential commitment or proof witness is recorded.</p>
       <div className="grid g2">
         <div className="card"><h2>Verification log</h2>

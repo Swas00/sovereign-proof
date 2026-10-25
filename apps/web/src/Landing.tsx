@@ -1,9 +1,4 @@
 import SculptureHero from "@/components/ui/liquid-sculpture-hero";
-// Bundled fonts: the landing never depends on Google Fonts being reachable.
-import "@fontsource/geist/400.css";
-import "@fontsource/geist/500.css";
-import "@fontsource/geist/600.css";
-import "@fontsource/instrument-serif/400-italic.css";
 
 const prefersDark = typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
 
@@ -29,8 +24,8 @@ export default function Landing() {
       hintTouch="Touch the form"
       backdropText="proof"
       theme={prefersDark ? "dark" : "light"}
-      background="#f4f6fb"
-      darkBackground="#0b1020"
+      background="#E9E6E0"
+      darkBackground="#121211"
       src="/hero/light.webp"
       darkSrc="/hero/dark.webp"
       mobileSrc="/hero/mobile-light.webp"
