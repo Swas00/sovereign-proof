@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.*
+*.ptau
+circuits/build/*.wtns
+.DS_Store
+dist/
+circuits/build/
