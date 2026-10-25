@@ -284,7 +284,7 @@ function Wallet({ pub }: { pub: any }) {
 
 function Trust({ pub, refresh }: { pub: any; refresh: () => void }) {
   const [err, setErr] = useState("");
-  const act = (path: string, body?: unknown) => async () => { setErr(""); try { await (ROUTE_ROLE[path] ? signedPost(path, body ?? {}, ROUTE_ROLE[path]) : api(path, body ?? {})); await refresh(); } catch (e: any) { setErr(e.message); } };
+  const act = (path: string, body?: unknown) => async () => { setErr(""); try { await (ROUTE_ROLE[path] ? signedPost(path, body ?? {}, ROUTE_ROLE[path]) : api(path, body ?? {})); await refresh(); } catch (e: any) { setErr(e.message); await refresh(); } };
   const s = pub.summary;
   const badge = (st: string) => <span className={"badge " + (st === "active" ? "b-ok" : st === "compromised" ? "b-warn" : "b-bad")}>{st}</span>;
   return (
@@ -347,7 +347,7 @@ function Issue({ pub, refresh }: { pub: any; refresh: () => void }) {
   async function go() {
     setErr(""); setOut(null);
     try { setOut(await signedPost("/api/issue", { issuerId, type, profile, holderId: w.creds[0].fields.holderId, a1, a2: type === 1 ? "0" : a2, name: pname, address: paddr, label: `${({ id: "National ID", degree: "Degree", license: "License" } as any)[role]} (issued ${new Date().toLocaleTimeString()})` }, issuerId as any)); await refresh(); }
-    catch (e: any) { setErr(e.message); }
+    catch (e: any) { setErr(e.message); await refresh(); } // a refusal is logged server-side, so show it
   }
   return (
     <>
@@ -460,7 +460,7 @@ function ChangeHistory({ pub, refresh }: { pub: any; refresh: () => void }) {
   const check = useCallback(async () => { setErr(""); try { setReport(await api("/api/integrity")); } catch (e: any) { setErr(e.message); } }, []);
   const run = (label: string, path: string, then: "check" | "none" = "check") => async () => {
     setErr(""); setBusy(label);
-    try { await (ROUTE_ROLE[path] ? signedPost(path, {}, ROUTE_ROLE[path]) : api(path, {})); await refresh(); if (then === "check") await check(); } catch (e: any) { setErr(e.message); } finally { setBusy(""); }
+    try { await (ROUTE_ROLE[path] ? signedPost(path, {}, ROUTE_ROLE[path]) : api(path, {})); await refresh(); if (then === "check") await check(); } catch (e: any) { setErr(e.message); await refresh(); } finally { setBusy(""); }
   };
   return (
     <>
