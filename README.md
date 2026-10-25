@@ -53,6 +53,8 @@ Measured on a deliberately weak profile (4x CPU slowdown, slow-4G network), prod
 Honest limits: these are headless-Chrome emulations on one machine, not real devices (Safari/iOS and Firefox are untested); the sculpture's real-GPU cost could only be measured with software rendering, which is why the governor exists; the first proof still downloads a 22 MB proving key (cached afterwards).
 
 ## Browser wallet (MetaMask)
+Step-by-step setup, a 3-minute demo script, troubleshooting and likely judge questions are in [WALLET_GUIDE.md](WALLET_GUIDE.md).
+
 A wallet is free to create and the key stays in the user's browser extension. The header's **Connect** control uses it for two things:
 1. **Signing actions as yourself.** With "My wallet" selected, each authority button (declare, issue, revoke, restore) is signed by your wallet with `personal_sign` (EIP-191, same message the demo keys sign). The server recovers your address and checks it against the role table. A fresh wallet has no role, so the action is refused and the attempt is logged under your real address, in the access log whose head is anchored on the chain. Import a demo role key (panel, "Act as a demo role") and the same button succeeds, attributed to that role.
 2. **Paying to anchor a result.** After a verification, "Anchor this result from your wallet" sends a transaction to `recordVerification` on `TrustAnchor`. The wallet pays the gas, the contract stamps the author and block time, and only a hash of the outcome goes on-chain (audit id, verdict, step outcomes, registry version). The chain page lists each receipt and whether it matches the verifier's own audit record. This is a statement by a wallet, not proof that the verdict is true.
