@@ -5,6 +5,8 @@ import { canonical, type SignedRegistry } from "../core/registry";
 
 const artifact = JSON.parse(readFileSync(new URL("../../chain/TrustAnchor.json", import.meta.url), "utf8"));
 export const RPC_URL = process.env.CHAIN_RPC ?? "http://127.0.0.1:8545";
+/** The only chain this server will talk to: the local development chain, whose ETH has no value. Anything else is refused. */
+export const DEV_CHAIN_ID = 31337;
 
 // Local development chain (Hardhat node). Accounts are the node's own unlocked test accounts: no keys live in this repo.
 export const ACCOUNT = { admin: 0, "gov-id": 1, "uni-x": 2, "uni-y": 3, "med-board": 4, auditor: 8, stranger: 9 } as const;
@@ -49,18 +51,23 @@ export class Chain {
   private signers: Record<number, JsonRpcSigner> = {};
   private addrLabel: Record<string, string> = {};
   private queue: Promise<unknown> = Promise.resolve();
-  readonly provider = new JsonRpcProvider(RPC_URL, undefined, { staticNetwork: true });
+  readonly provider: JsonRpcProvider;
+  constructor(rpcUrl: string = RPC_URL) { this.provider = new JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true }); }
   private cache: { at: number; snap: ChainSnapshot } | null = null;
 
-  static async connect(retries = 25, delayMs = 1000): Promise<Chain> {
-    const c = new Chain();
+  static async connect(retries = 25, delayMs = 1000, rpcUrl?: string): Promise<Chain> {
+    const c = new Chain(rpcUrl);
     await c.ping(retries, delayMs);
     return c;
   }
 
   async ping(retries = 1, delayMs = 500): Promise<boolean> {
     for (let i = 0; i < retries; i++) {
-      try { await this.provider.send("eth_chainId", []); this.online = true; this.error = ""; return true; }
+      try {
+        const id = Number(await this.provider.send("eth_chainId", []));
+        if (id !== DEV_CHAIN_ID) { this.online = false; this.error = `refusing to use chain ${id}: this demo only runs on the ${DEV_CHAIN_ID} development chain`; return false; } // a real network must never be written to
+        this.online = true; this.error = ""; return true;
+      }
       catch (e: any) { this.online = false; this.error = String(e?.shortMessage ?? e?.message ?? e).slice(0, 120); if (i < retries - 1) await sleep(delayMs); }
     }
     return false;
