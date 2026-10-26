@@ -33,6 +33,7 @@ app.use(express.json({ limit: "256kb" }));
 app.use(["/api/demo/reset", "/api/demo/steal"], rateLimit(10, 60_000, "heavy"));
 app.use("/api", rateLimit(120, 60_000, "api"));
 app.use("/rpc", rateLimit(600, 60_000, "rpc"));
+app.get("/healthz", (_q, r) => { r.json({ ok: true, chain: chain.online }); }); // for the host's health check and keep-alive pings
 
 const wrap = (fn: (req: express.Request, res: express.Response) => unknown) => async (req: express.Request, res: express.Response) => {
   try { await fn(req, res); } catch (e: any) { res.status(400).json({ error: e.message ?? "bad request" }); }
