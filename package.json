@@ -17,7 +17,8 @@
     "chain:compile": "node chain/compile.mjs",
     "chain:test": "tsx scripts/chain-test.ts",
     "audit:responsive": "node scripts/responsive-audit.mjs",
-    "audit:money": "node scripts/no-real-money-audit.mjs"
+    "audit:money": "node scripts/no-real-money-audit.mjs",
+    "audit:access": "tsx scripts/denied-matrix.ts"
   },
   "keywords": [],
   "author": "",
