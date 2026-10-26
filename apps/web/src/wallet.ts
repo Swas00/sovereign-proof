@@ -137,10 +137,10 @@ export async function anchorReceipt(receiptHex: string, registryVersion: number,
   const p = provider(); if (!p || !state.account) throw new Error("Connect a wallet first.");
   const { Interface } = await import("ethers");
   const info = await loadInfo(); set({ info });
-  if (!isTestChain(info.chainId)) throw new Error(`Refusing to send: this server reports chain ${info.chainId}, which is not the local test network. Nothing was sent.`);
+  if (!isTestChain(info.chainId)) throw new Error(`Refusing to send: this server reports chain ${info.chainId}, which is not the demo test network. Nothing was sent.`);
   await ensureNetwork();
   const walletChain = parseInt(await p.request({ method: "eth_chainId" }), 16);
-  if (!isTestChain(walletChain)) throw new Error(`Your wallet is on network ${walletChain}, not the local test network. Switch networks in MetaMask. Nothing was sent.`);
+  if (!isTestChain(walletChain)) throw new Error(`Your wallet is on network ${walletChain}, not the demo test network. Switch networks in MetaMask. Nothing was sent.`);
   const code: string = await p.request({ method: "eth_getCode", params: [info.contract, "latest"] });
   if (!code || code === "0x") throw new Error("There is no contract at that address on this chain (was the demo reset?). Nothing was sent.");
   const iface = new Interface(IFACE);

@@ -249,7 +249,7 @@ function AnchorReceipt({ res, refresh }: { res: any; refresh: () => void }) {
       <div className="row">
         <div style={{ flex: 1, minWidth: 220 }}>
           <h2 style={{ marginBottom: 4 }}>Anchor this result from your wallet</h2>
-          <p className="small muted" style={{ margin: 0 }}>Records a hash of this outcome on the chain under your address, with the block time. No credential data goes on-chain. It costs a small gas fee, paid from the wallet{w.info?.local ? " (free test ETH on this local chain)" : ""}.</p>
+          <p className="small muted" style={{ margin: 0 }}>Records a hash of this outcome on the chain under your address, with the block time. No credential data goes on-chain. It costs a small gas fee, paid from the wallet{w.info?.local ? " (free test ETH on this demo chain)" : ""}.</p>
         </div>
         <button type="button" className="btn small" disabled={busy || !!done} onClick={go}>{busy ? "Confirm in your wallet…" : done ? "Anchored" : w.account ? `Anchor as ${shortAddr(w.account)}` : "Connect wallet and anchor"}</button>
       </div>
@@ -400,8 +400,8 @@ function Audit({ pub, refresh }: { pub: any; refresh: () => void }) {
         <div className="card"><h2>Trust model and honest limits</h2>
           <ul className="clean small">
             <li><strong>Real:</strong> Groth16 proofs over the BN254 curve; EdDSA-Poseidon issuer signatures verified inside the circuit; Poseidon Merkle issuance logs; an Ed25519-signed, hash-chained registry; and a Solidity smart contract on an EVM chain that records registry hashes and issuance-log roots.</li>
-            <li><strong>Simulated:</strong> issuers and key custody run in one demo server, and the blockchain is a local development chain (Hardhat), not a public network. Its clock is steered to replay the demo timeline.</li>
-            <li><strong>Centralized:</strong> registry and status-list hosting, and the one local chain node. Registry versions are signed and their hashes are on the chain, so tampering is detectable, but the demo itself is not a decentralized network.</li>
+            <li><strong>Simulated:</strong> issuers and key custody run in one demo server, and the blockchain is a development chain (Hardhat) run by this demo, not a public network. Its clock is steered to replay the demo timeline.</li>
+            <li><strong>Centralized:</strong> registry and status-list hosting, and the one chain node. Registry versions are signed and their hashes are on the chain, so tampering is detectable, but the demo itself is not a decentralized network.</li>
             <li><strong>Dev-only:</strong> the trusted setup has a single local contribution. A real deployment needs a multi-party ceremony.</li>
             <li><strong>Attribution:</strong> every write made through the application must be signed by an authorised account, and is recorded with who, when and the previous value; refused attempts are recorded too, and the access log is anchored on the chain so it cannot be quietly rewritten. An edit that <em>bypasses</em> the application (raw file or database access) cannot carry a signature by definition: the system detects it, shows what changed against the chain, proves no authorised signed write explains it, and bounds it in time by the last intact anchor. Naming the person behind such a raw edit would still need host-level logging. Verifiers are unaffected, because they check the chain, not the server's copy.</li>
             <li><strong>Demo shortcuts:</strong> actors sign with the local node's publicly known test keys, and the server relays each transaction from the node's unlocked accounts after checking the actor's signature. In production every actor holds its own key and submits its own transactions, which removes that trust in the server.</li>

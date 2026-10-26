@@ -72,8 +72,8 @@ export default function WalletPill() {
             <>
               <h3>Wallet connected</h3>
               {onTest
-                ? <p className="wp-safe" role="status"><strong>Test network. No real money.</strong> This chain runs on your computer, and its ETH has no value. The app sends transactions only here.</p>
-                : <p className="wp-unsafe" role="alert"><strong>Not the test network (id {w.chainId ?? "unknown"}).</strong> The app will not send any transaction on this network. Use Switch below to return to the local test chain.{role && " This account's key is public: never use it on a real network, anything sent to it will be stolen."}</p>}
+                ? <p className="wp-safe" role="status"><strong>Test network. No real money.</strong> This is a development test chain, not a real network, and its ETH has no value. The app sends transactions only here.</p>
+                : <p className="wp-unsafe" role="alert"><strong>Not the test network (id {w.chainId ?? "unknown"}).</strong> The app will not send any transaction on this network. Use Switch below to return to the demo test chain.{role && " This account's key is public: never use it on a real network, anything sent to it will be stolen."}</p>}
               <div className="wp-addr mono" title={w.account}>{w.account}</div>
               <div className="kv small">
                 <span>Role</span><span>{role ? <strong>{role.label}</strong> : <span className="warn">No role. Privileged actions will be refused and logged.</span>}</span>
@@ -88,7 +88,7 @@ export default function WalletPill() {
               <p className="small muted">{w.signWith === "wallet" ? "Buttons that need authority (declare, issue, revoke, restore) are signed by your wallet. Without a role they are refused, and the attempt is recorded under your address." : "Authority buttons are signed by the built-in role keys, so the whole demo works without wallet prompts."}</p>
               <details className="small">
                 <summary><KeyRound size={13} aria-hidden /> Act as a demo role in MetaMask</summary>
-                <p className="muted">These are the local chain's public test keys. Import one into MetaMask (Account menu, Import account) to hold that role with your own wallet. Never use them on a real network.</p>
+                <p className="muted">These are the demo chain's public test keys. Import one into MetaMask (Account menu, Import account) to hold that role with your own wallet. Never use them on a real network.</p>
                 <ul className="clean">
                   {w.info?.roles.map((r) => (
                     <li key={r.role} className="wp-role"><span><strong>{r.role}</strong> <span className="muted mono">{shortAddr(r.address)}</span></span>
