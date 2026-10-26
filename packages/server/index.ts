@@ -23,6 +23,7 @@ const chain = await Chain.connect(); // retries ~25s so `npm run dev` can start 
 if (!chain.online) console.warn("chain unreachable at startup:", chain.error, "(verifiers will fail closed)");
 let st: State = await createState(chain);
 const app = express();
+app.set("trust proxy", 1); // behind a host's HTTPS proxy: req.protocol and req.ip come from X-Forwarded-*
 // text assets (JS, CSS, JSON, WASM) are sent compressed; the 22 MB proving key is binary and barely shrinks, so it is left alone
 app.use(compression({ filter: (req, res) => (req.path.endsWith(".zkey") ? false : compression.filter(req, res)) }));
 app.use(express.json({ limit: "256kb" }));
@@ -89,7 +90,14 @@ app.get("/api/public", wrap(async (_q, r) => {
 // Browser-wallet support: network details for MetaMask, a local-only faucet for free test ETH, and receipt cross-checking.
 // Public JSON-RPC gateway for browser wallets: reads, plus signed recordVerification receipts only (see rpcproxy.ts).
 app.post("/rpc", rpcGateway(RPC_URL, () => chain.address, () => 31337));
-app.get("/api/chain/info", wrap(async (_q, r) => { if (!chain.online) throw new Error("chain unreachable"); r.json(await chain.info()); }));
+// A wallet on this computer talks to the node directly. Anyone else (a deployed site, a phone on the Wi-Fi) must use the gateway, and
+// MetaMask only accepts https RPC addresses off localhost, so the gateway URL is built from the address the page was loaded from.
+const isLocalHost = (h?: string) => /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(h ?? "");
+app.get("/api/chain/info", wrap(async (q, r) => {
+  if (!chain.online) throw new Error("chain unreachable");
+  const host = q.get("host");
+  r.json(await chain.info(isLocalHost(host) ? undefined : `${q.protocol}://${host}/rpc`));
+}));
 app.post("/api/wallet/fund", audited("sent test ETH to a wallet (local faucet)", null, async (q, r) => { r.json(await chain.fund(String(q.body?.address ?? ""))); }));
 
 app.get("/api/demo/wallet/:profile", wrap((q, r) => {

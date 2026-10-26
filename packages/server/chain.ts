@@ -136,10 +136,11 @@ export class Chain {
   }
 
   /** What a browser wallet needs to join this chain. */
-  async info() {
+  /** `publicRpc`: the HTTPS gateway URL to give a wallet when the page is not served from this computer. */
+  async info(publicRpc?: string) {
     const id = Number(await this.provider.send("eth_chainId", []));
     const local = id === 31337;
-    return { chainId: id, chainIdHex: "0x" + id.toString(16), name: local ? "Sovereign Proof local chain" : `Chain ${id}`, rpc: RPC_URL, symbol: "ETH", local, contract: this.address,
+    return { chainId: id, chainIdHex: "0x" + id.toString(16), name: local ? (publicRpc ? "Sovereign Proof demo chain" : "Sovereign Proof local chain") : `Chain ${id}`, rpc: publicRpc ?? RPC_URL, symbol: "ETH", local, contract: this.address,
       faucet: local, roles: Object.entries(ACCOUNT).filter(([r]) => r !== "stranger").map(([role, i]) => ({ role, address: this.addressOf(i), label: LABELS[i] })) };
   }
   /** Raw read: ethers' getBalance resolves "latest" from a cached block number and can return a stale balance. */
