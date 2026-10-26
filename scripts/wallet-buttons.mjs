@@ -25,7 +25,8 @@ async function open(wallet, fn, opts = {}) {
     const page = await browser.newPage(); await page.setViewport({ width: 1280, height: 900 });
     const log = [];
     if (wallet) {
-      const provider = new JsonRpcProvider(RPC, undefined, { staticNetwork: true }), w = wallet.connect(provider);
+      const provider = new JsonRpcProvider(RPC, undefined, { staticNetwork: true });
+      let net = provider, w = wallet.connect(provider); // after the app adds the chain, use the RPC address it supplied (local node, or a deployed site's /rpc gateway)
       let chain = "0x1", added = false;
       await page.exposeFunction("__eth", async (method, params) => {
         log.push(method);
@@ -34,8 +35,8 @@ async function open(wallet, fn, opts = {}) {
             case "eth_requestAccounts": case "eth_accounts": return { result: [w.address] };
             case "eth_chainId": return { result: chain };
             case "wallet_switchEthereumChain": if (opts.stuck) return { result: null }; if (!added) return { error: { code: 4902, message: "Unrecognized chain ID" } }; chain = params[0].chainId; return { result: null };
-            case "wallet_addEthereumChain": if (opts.stuck) return { result: null }; added = true; chain = params[0].chainId; return { result: null };
-            case "eth_getBalance": case "eth_getCode": case "eth_getTransactionReceipt": return { result: await provider.send(method, params) };
+            case "wallet_addEthereumChain": if (opts.stuck) return { result: null }; net = new JsonRpcProvider(params[0].rpcUrls[0], undefined, { staticNetwork: true }); w = wallet.connect(net); added = true; chain = params[0].chainId; return { result: null };
+            case "eth_getBalance": case "eth_getCode": case "eth_getTransactionReceipt": return { result: await net.send(method, params) };
             case "personal_sign": return { result: await w.signMessage(getBytes(params[0])) };
             case "eth_sendTransaction": { const t = await w.sendTransaction({ to: params[0].to, data: params[0].data }); return { result: t.hash }; }
             default: return { error: { code: -32601, message: "unsupported: " + method } };
