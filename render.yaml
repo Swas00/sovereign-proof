@@ -1,0 +1,12 @@
+# Render Blueprint: New > Blueprint, pick this repository. One web service, built from the Dockerfile.
+services:
+  - type: web
+    name: sovereign-proof
+    runtime: docker
+    plan: free            # sleeps after 15 minutes without traffic; see DEPLOY.md for keeping it awake, and for memory limits
+    healthCheckPath: /healthz
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: HARDHAT_DISABLE_TELEMETRY_PROMPT
+        value: "true"
