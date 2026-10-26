@@ -1,0 +1,9 @@
+node_modules
+.git
+apps/web/dist
+*.ptau
+*.r1cs
+*.sym
+.env
+.env.*
+.DS_Store
