@@ -17,7 +17,8 @@ const waitFor = async (cond, ms = 15000) => { const end = Date.now() + ms; while
 
 await api("/api/demo/reset", {});
 const provider = new JsonRpcProvider(RPC, undefined, { staticNetwork: true });
-const fresh = Wallet.createRandom().connect(provider), admin = new Wallet(ADMIN_KEY, provider);
+const fresh = Wallet.createRandom(), admin = new Wallet(ADMIN_KEY);
+let net = provider; // after the app adds the chain, the wallet uses the RPC address the app supplied (like MetaMask): the local node, or a deployed site's /rpc gateway
 let current = fresh, chain = "0x1", added = false;
 
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--no-sandbox"] });
@@ -29,10 +30,10 @@ try {
         case "eth_requestAccounts": case "eth_accounts": return { result: [current.address.toLowerCase()] }; // MetaMask reports lowercase
         case "eth_chainId": return { result: chain };
         case "wallet_switchEthereumChain": if (!added) return { error: { code: 4902, message: "Unrecognized chain ID" } }; chain = params[0].chainId; return { result: null };
-        case "wallet_addEthereumChain": added = true; chain = params[0].chainId; return { result: null };
-        case "eth_getBalance": case "eth_getCode": case "eth_getTransactionReceipt": return { result: await provider.send(method, params) };
+        case "wallet_addEthereumChain": if (!/^https?:\/\//.test(params[0].rpcUrls?.[0] ?? "")) return { error: { code: -32602, message: "bad rpc url" } }; net = new JsonRpcProvider(params[0].rpcUrls[0], undefined, { staticNetwork: true }); added = true; chain = params[0].chainId; return { result: null };
+        case "eth_getBalance": case "eth_getCode": case "eth_getTransactionReceipt": return { result: await net.send(method, params) };
         case "personal_sign": return { result: await current.signMessage(getBytes(params[0])) };
-        case "eth_sendTransaction": { const t = await current.sendTransaction({ to: params[0].to, data: params[0].data }); return { result: t.hash }; }
+        case "eth_sendTransaction": { const t = await current.connect(net).sendTransaction({ to: params[0].to, data: params[0].data }); return { result: t.hash }; }
         default: return { error: { code: -32601, message: "unsupported: " + method } };
       }
     } catch (e) { return { error: { code: e.code ?? -32000, message: String(e.shortMessage ?? e.message) } }; }
@@ -61,7 +62,7 @@ try {
   await page.click(".walletpill"); await click("Connect MetaMask"); await waitText("Wallet connected"); await page.keyboard.press("Escape");
   ok("after connecting: 2 of 6", await waitFor(async () => (await done()) === "2", 5000), await done());
   await click("Send me 1 ETH");
-  ok("after the faucet: 3 of 6", await waitFor(async () => (await done()) === "3", 8000), await done()); await shot("3-funded");
+  ok("after the faucet: 3 of 6", await waitFor(async () => (await done()) === "3", 25000), await done()); await shot("3-funded");
   await click("Restore from the chain");
   ok("step 4: refused, ticks to 4 of 6", await waitFor(async () => (await done()) === "4", 8000), await done()); await shot("4-refused");
 
