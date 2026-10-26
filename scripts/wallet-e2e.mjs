@@ -15,7 +15,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function session(wallet, label, fn, opts = {}) {
   console.log("--- " + label + "  " + wallet.address);
   const provider = new JsonRpcProvider(RPC, undefined, { staticNetwork: true });
-  const w = wallet.connect(provider);
+  let net = provider, w = wallet.connect(provider); // after the app adds the chain, use the RPC address it supplied (like MetaMask does)
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage(); await page.setViewport({ width: 1280, height: 900 });
   let chain = "0x1", added = false, failSend = !opts.stuck; const log = [], sent = [];
@@ -26,12 +26,14 @@ async function session(wallet, label, fn, opts = {}) {
         case "eth_requestAccounts": case "eth_accounts": return { result: [w.address] };
         case "eth_chainId": return { result: chain };
         case "wallet_switchEthereumChain": if (opts.stuck === "ignore") return { result: null }; if (!added) return { error: { code: 4902, message: "Unrecognized chain ID" } }; chain = params[0].chainId; return { result: null };
-        case "wallet_addEthereumChain": if (opts.stuck === "ignore") return { result: null }; if (params[0].chainId !== "0x7a69" || !params[0].rpcUrls.includes(RPC)) return { error: { code: -32602, message: "bad chain params" } }; added = true; chain = params[0].chainId; return { result: null };
-        case "eth_getCode": return { result: await provider.send("eth_getCode", params) };
-        case "eth_getBalance": return { result: await provider.send("eth_getBalance", params) };
+        case "wallet_addEthereumChain": if (opts.stuck === "ignore") return { result: null }; if (params[0].chainId !== "0x7a69" || !/^https?:\/\//.test(params[0].rpcUrls?.[0] ?? "")) return { error: { code: -32602, message: "bad chain params" } };
+          if (!APP.includes("localhost") && !APP.includes("127.0.0.1") && !params[0].rpcUrls[0].endsWith("/rpc")) return { error: { code: -32602, message: "a non-local page must be given the /rpc gateway" } };
+          net = new JsonRpcProvider(params[0].rpcUrls[0], undefined, { staticNetwork: true }); w = wallet.connect(net); added = true; chain = params[0].chainId; return { result: null };
+        case "eth_getCode": return { result: await net.send("eth_getCode", params) };
+        case "eth_getBalance": return { result: await net.send("eth_getBalance", params) };
         case "personal_sign": return { result: await w.signMessage(getBytes(params[0])) };
         case "eth_sendTransaction": { sent.push(params[0]); if (failSend) { failSend = false; return { error: { code: -32603, message: "nonce too high" } }; } const t = await w.sendTransaction({ to: params[0].to, data: params[0].data }); return { result: t.hash }; }
-        case "eth_getTransactionReceipt": return { result: await provider.send("eth_getTransactionReceipt", params) };
+        case "eth_getTransactionReceipt": return { result: await net.send("eth_getTransactionReceipt", params) };
         default: return { error: { code: -32601, message: "unsupported in test: " + method } };
       }
     } catch (e) { return { error: { code: e.code ?? -32000, message: String(e.shortMessage ?? e.message) } }; }
