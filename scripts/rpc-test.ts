@@ -36,8 +36,9 @@ ok("a malformed body is rejected", (await fetch(APP + "/rpc", { method: "POST", 
 console.log("--- signed transactions: only a zero-value recordVerification to the contract");
 await post("/api/wallet/fund", { address: user.address }); await sleep(300);
 const nonceOf = async (a: string) => parseInt((await rpc("eth_getTransactionCount", [a, "latest"])).result, 16);
-const raw = (w: Wallet, o: any) => w.signTransaction({ chainId: 31337, nonce: 0, gasLimit: 200000, maxFeePerGas: 3_000_000_000n, maxPriorityFeePerGas: 1_000_000_000n, type: 2, ...o });
-const send = async (w: Wallet, o: any) => rpc("eth_sendRawTransaction", [await raw(w, { nonce: await nonceOf(w.address), ...o })]);
+type Signs = { address: string; signTransaction(tx: any): Promise<string> };
+const raw = (w: Signs, o: any) => w.signTransaction({ chainId: 31337, nonce: 0, gasLimit: 200000, maxFeePerGas: 3_000_000_000n, maxPriorityFeePerGas: 1_000_000_000n, type: 2, ...o });
+const send = async (w: Signs, o: any) => rpc("eth_sendRawTransaction", [await raw(w, { nonce: await nonceOf(w.address), ...o })]);
 const receipt = "0x" + "ab".repeat(32);
 const good = iface.encodeFunctionData("recordVerification", [receipt, 1, true]);
 let r = await send(user, { to: Wallet.createRandom().address, value: parseEther("0.5") });
