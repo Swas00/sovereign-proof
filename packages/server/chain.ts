@@ -146,13 +146,17 @@ export class Chain {
   /** Raw read: ethers' getBalance resolves "latest" from a cached block number and can return a stale balance. */
   async balanceOf(address: string): Promise<bigint> { return BigInt(await this.provider.send("eth_getBalance", [address, "latest"])); }
   private lastFund = new Map<string, number>();
+  private fundTimes: number[] = []; // global cap on faucet grants, so a public deployment cannot be drained of its dev-chain test ETH
   /** Local-chain faucet: sends test ETH from an unused dev account, like a testnet faucet would. Refuses on any other chain. */
   async fund(address: string): Promise<{ txHash: string; amount: string; balance: string }> {
     if (!isAddress(address)) throw new Error("not a valid address");
     if (!(await this.info()).local) throw new Error("the built-in faucet only exists on the local dev chain");
-    const key = address.toLowerCase(), last = this.lastFund.get(key) ?? 0;
+    const hourAgo = Date.now() - 3_600_000;
+    this.fundTimes = this.fundTimes.filter((t) => t > hourAgo);
+    if (this.fundTimes.length >= 60) throw new Error("the faucet is busy: it sends at most 60 grants an hour. Try again later");
+        const key = address.toLowerCase(), last = this.lastFund.get(key) ?? 0;
     if (Date.now() - last < 5000) throw new Error("slow down: one request every few seconds per address");
-    this.lastFund.set(key, Date.now());
+    this.lastFund.set(key, Date.now()); this.fundTimes.push(Date.now());
     const AMOUNT = parseEther("1");
     const bal = await this.balanceOf(address);
     if (bal >= parseEther("5")) throw new Error("this wallet already has plenty of test ETH");
