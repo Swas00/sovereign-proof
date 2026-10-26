@@ -124,7 +124,9 @@ rr = await w(ACCOUNT.stranger, "2026-11-01T00:10:00Z", (c) => c.recordVerificati
 ok("an empty receipt is refused", rr.rejected);
 ok("a receipt write does not grant any other authority", (await w(ACCOUNT.stranger, "2026-11-01T00:15:00Z", (c) => c.publishRegistry(9, JUNK, JUNK, "x", "0x", "0x"))).rejected);
 const info = await chain.info();
-ok("chain info tells a wallet how to join (id, rpc, contract, roles)", info.chainId === 31337 && info.chainIdHex === "0x7a69" && info.contract === chain.address && info.roles.length === 6 && !info.roles.some((r) => r.role === "stranger"));
+ok("chain info tells a wallet how to join (id, rpc, symbol, contract, roles)", info.chainId === 31337 && info.chainIdHex === "0x7a69" && /^https?:\/\//.test(info.rpc) && info.symbol === "ETH" && info.local === true && info.contract === chain.address && info.roles.length === 6 && !info.roles.some((r) => r.role === "stranger"), JSON.stringify(Object.keys(info)));
+ok("the network is named TEST in MetaMask's list", /TEST/.test(info.name), info.name);
+ok("a public deployment's info carries the https gateway address", (await chain.info("https://example.test/rpc")).rpc === "https://example.test/rpc");
 const f = await chain.fund("0x000000000000000000000000000000000000dEaD");
 ok("the local faucet sends test ETH", Number(f.balance) >= 1);
 let threw = ""; try { await chain.fund("not-an-address"); } catch (e: any) { threw = e.message; }
