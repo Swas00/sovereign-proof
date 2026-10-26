@@ -49,7 +49,11 @@ You can say each of these and point at where it is enforced.
 | The fee is bounded | Gas is capped at 200,000 units | `wallet-e2e` |
 | The ETH here has no value | Chain 31337 runs on your computer. The faucet exists only on that chain and refuses anywhere else. | `chain:test`, plus the "Test network. No real money." marker in the wallet panel |
 | Signing cannot spend | Authority actions use `personal_sign` on a plain text message, which cannot move funds | the signed text is shown in MetaMask |
+| The server cannot be pointed at a real network | On start-up and on every reset it checks the node's chain id and refuses anything but 31337 (mainnet, Sepolia, Polygon and Base are tested), so nothing is ever deployed or written elsewhere | `tests/chainguard.test.ts` |
+| MetaMask's own network list says it is a test network | The network is named "Sovereign Proof TEST chain" | `npm run chain:test`, `npm run audit:money` |
 | Other devices cannot reach the demo controls | The API listens on this computer only. Phone testing needs `HOST=0.0.0.0`, which prints that it is reachable. | start-up message |
+
+**One command re-checks all of it:** `npm run audit:money` (add `APP=https://… ` to audit a deployed copy). It scans the code for payment services, real RPC providers, secrets and non-test keys, confirms there is one transaction call site and its value is zero, confirms every key in the repo is a published Hardhat test account, confirms the contract cannot hold value, probes the running app's gateway with hostile transactions, and loads all six pages to list who they contact (only their own server). It was also tried against deliberately planted violations, and flags each one.
 
 Habits that keep it that way:
 - Use a separate browser profile (or a throwaway wallet) for the demo. Do not import a wallet that holds real funds.
