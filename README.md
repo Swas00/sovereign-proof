@@ -41,6 +41,9 @@ Honest limits:
 - It is a local dev chain, not a public network, with one node (no real decentralisation). The demo steers the chain clock (`evm_setNextBlockTimestamp`) to replay a multi-week timeline; the node only allows going forward.
 - The anchoring account must be a separate credential from the signing key. A thief holding both could still anchor inside the window, which the policy then quarantines; the window start must be set correctly.
 
+## Deploying
+See [DEPLOY.md](DEPLOY.md): a Dockerfile and Render blueprint run the chain, API and web app in one container, with a locked-down `/rpc` gateway so browser wallets can use it safely. `npx tsx scripts/rpc-test.ts` checks the gateway (26 cases).
+
 ## Responsive and fast
 
 `npm run audit:responsive` loads every page (in its busiest state, tables full) at 20 device profiles (a 280px folded phone, small and large phones in both orientations, tablets, laptops, 1440p, ultrawide) and checks for sideways scrolling, off-screen or clipped content, overlapping siblings, touch targets under 44px, inputs under 16px (iOS zooms the page on focus), tiny text, a squashed hero and tables that scroll inside their box. `SELFTEST=1` plants real defects to prove the probe can fail (an earlier version could not: on mobile, `innerWidth` grows with wide content, so the audit now compares against the true device width). Current result: **0 problems across 120 page loads**.
