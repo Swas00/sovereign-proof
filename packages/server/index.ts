@@ -14,6 +14,7 @@ import { canonical } from "../core/canonical";
 import { sha256hex } from "../core/registry";
 import { receiptText } from "../core/receipt";
 import { rpcGateway } from "./rpcproxy";
+import { rateLimit } from "./ratelimit";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -27,6 +28,11 @@ app.set("trust proxy", 1); // behind a host's HTTPS proxy: req.protocol and req.
 // text assets (JS, CSS, JSON, WASM) are sent compressed; the 22 MB proving key is binary and barely shrinks, so it is left alone
 app.use(compression({ filter: (req, res) => (req.path.endsWith(".zkey") ? false : compression.filter(req, res)) }));
 app.use(express.json({ limit: "256kb" }));
+// Abuse limits for a public deployment (requests from this computer are exempt). The demo controls take no signature by design, so
+// the heavy ones get a tighter limit; the wallet gateway and the rest of the API get generous ones.
+app.use(["/api/demo/reset", "/api/demo/steal"], rateLimit(10, 60_000, "heavy"));
+app.use("/api", rateLimit(120, 60_000, "api"));
+app.use("/rpc", rateLimit(600, 60_000, "rpc"));
 
 const wrap = (fn: (req: express.Request, res: express.Response) => unknown) => async (req: express.Request, res: express.Response) => {
   try { await fn(req, res); } catch (e: any) { res.status(400).json({ error: e.message ?? "bad request" }); }
