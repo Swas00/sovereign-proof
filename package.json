@@ -16,7 +16,8 @@
     "chain": "hardhat node",
     "chain:compile": "node chain/compile.mjs",
     "chain:test": "tsx scripts/chain-test.ts",
-    "audit:responsive": "node scripts/responsive-audit.mjs"
+    "audit:responsive": "node scripts/responsive-audit.mjs",
+    "audit:money": "node scripts/no-real-money-audit.mjs"
   },
   "keywords": [],
   "author": "",
