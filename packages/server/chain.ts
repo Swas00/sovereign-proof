@@ -147,7 +147,8 @@ export class Chain {
   async info(publicRpc?: string) {
     const id = Number(await this.provider.send("eth_chainId", []));
     const local = id === 31337;
-    return { chainId: id, chainIdHex: "0x" + id.toString(16), name: local ? (publicRpc ? "Sovereign Proof TEST chain" : "Sovereign Proof TEST chain (local)") : `Chain ${id}`, // MetaMask shows this name: it must say TEST rpc: publicRpc ?? RPC_URL, symbol: "ETH", local, contract: this.address,
+    // The name is what MetaMask lists for this network, so it must say TEST.
+    return { chainId: id, chainIdHex: "0x" + id.toString(16), name: local ? (publicRpc ? "Sovereign Proof TEST chain" : "Sovereign Proof TEST chain (local)") : `Chain ${id}`, rpc: publicRpc ?? RPC_URL, symbol: "ETH", local, contract: this.address,
       faucet: local, roles: Object.entries(ACCOUNT).filter(([r]) => r !== "stranger").map(([role, i]) => ({ role, address: this.addressOf(i), label: LABELS[i] })) };
   }
   /** Raw read: ethers' getBalance resolves "latest" from a cached block number and can return a stale balance. */
