@@ -9,6 +9,7 @@
     "web": "vite apps/web",
     "dev": "concurrently -n chain,api,web -c yellow,cyan,magenta \"npm:chain\" \"npm:server\" \"npm:web\"",
     "build:web": "vite build apps/web",
+    "serve": "concurrently -k -n chain,api -c yellow,cyan \"npm:chain\" \"npm:server\"",
     "start": "vite build apps/web && concurrently -k -n chain,api -c yellow,cyan \"npm:chain\" \"npm:server\"",
     "build:circuit": "./circuits/build.sh",
     "e2e": "tsx scripts/e2e.ts",
