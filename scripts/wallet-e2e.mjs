@@ -11,6 +11,7 @@ let fails = 0;
 const ok = (n, c, x = "") => { if (!c) fails++; console.log((c ? "  ok   " : "  FAIL ") + n + (c ? "" : "  " + x)); };
 const api = (p, b) => fetch(APP + p, b ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) } : undefined).then((r) => r.json());
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const waitFor = async (cond, ms = 15000) => { const end = Date.now() + ms; while (Date.now() < end) { try { if (await cond()) return true; } catch { /* retry */ } await sleep(200); } return false; };
 
 async function session(wallet, label, fn, opts = {}) {
   console.log("--- " + label + "  " + wallet.address);
@@ -45,24 +46,25 @@ async function session(wallet, label, fn, opts = {}) {
   const click = async (text, sel = "button") => { const h = await page.evaluateHandle((t, s) => [...document.querySelectorAll(s)].find((b) => b.textContent.trim().startsWith(t) && !b.disabled), text, sel); const el = h.asElement(); if (!el) throw new Error("no button: " + text); await el.click(); };
   const text = () => page.evaluate(() => document.body.innerText);
   const waitText = async (t, ms = 15000) => { const end = Date.now() + ms; while (Date.now() < end) { if ((await text()).includes(t)) return true; await sleep(150); } return false; };
-  try { await fn({ page, click, text, waitText, w, log, provider, sent }); } finally { await browser.close(); }
+  const balanceOf = async (a) => BigInt(await net.send("eth_getBalance", [a, "latest"])); // on the network the wallet was told to use (local node, or a deployed site's gateway)
+  try { await fn({ page, click, text, waitText, w, log, provider, sent, balanceOf }); } finally { await browser.close(); }
 }
 
 await api("/api/demo/reset", {});
 
 // 1) A brand-new free wallet: no role. Connect, add the network, take free test ETH, anchor a receipt, get refused when acting as admin.
 const fresh = Wallet.createRandom();
-await session(fresh, "fresh wallet (no role)", async ({ page, click, text, waitText, log, provider, sent }) => {
+await session(fresh, "fresh wallet (no role)", async ({ page, click, text, waitText, log, sent, balanceOf }) => {
   await page.goto(APP + "/#app/audit", { waitUntil: "networkidle0" });
   await click("Connect");
   ok("panel offers MetaMask", await waitText("Connect MetaMask"));
   await click("Connect MetaMask");
   ok("connected: full address shown", await waitText(fresh.address));
-  ok("the chain was added to the wallet (switch refused, then add)", log.includes("wallet_addEthereumChain") && log.includes("wallet_switchEthereumChain"), log.join(","));
+  ok("the chain was added to the wallet (switch refused, then add)", await waitFor(async () => log.includes("wallet_addEthereumChain") && log.includes("wallet_switchEthereumChain"), 15000), log.join(","));
   ok("fresh wallet has no role", await waitText("No role"));
   await click("Get free test ETH");
   ok("faucet funded the wallet", await waitText("1.0000 test ETH"));
-  ok("balance on the chain matches", (await provider.getBalance(fresh.address)) === 10n ** 18n);
+  ok("balance on the chain matches", (await balanceOf(fresh.address)) === 10n ** 18n, String(await balanceOf(fresh.address)));
   // a privileged button, signed by this wallet, must be refused and recorded under THIS address
   await page.keyboard.press("Escape");
   await click("Restore from the chain");
@@ -89,7 +91,7 @@ await session(fresh, "fresh wallet (no role)", async ({ page, click, text, waitT
   const r = after.receipts[0];
   ok("chain holds one receipt authored by the wallet", after.receipts.length === 1 && r.verifier.toLowerCase() === fresh.address.toLowerCase(), JSON.stringify(after.receipts));
   ok("the receipt matches the verifier's own audit record", r.matchesAudit === true);
-  ok("wallet paid gas (balance fell)", (await provider.getBalance(fresh.address)) < 10n ** 18n);
+  ok("wallet paid gas (balance fell)", (await balanceOf(fresh.address)) < 10n ** 18n, String(await balanceOf(fresh.address)));
   await page.goto(APP + "/#app/audit", { waitUntil: "networkidle0" });
   ok("checklist now shows the anchored receipt (5 of 6)", await waitText("5 of 6 done"));
   ok("the receipt is in the chain audit feed with the wallet as actor", after.chain.audit.some((a) => a.action === "Verification receipt anchored" && a.actor.toLowerCase() === fresh.address.toLowerCase()));
