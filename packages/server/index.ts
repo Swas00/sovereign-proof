@@ -8,11 +8,12 @@ import { CATALOG, credToWire, reqToProof, type WireRequest } from "../core/wire"
 import { rootFromPath } from "../core/merkle";
 import { CODES } from "../core/fixtures";
 import { createState, type State } from "./state";
-import { ACCOUNT, Chain } from "./chain";
+import { ACCOUNT, Chain, RPC_URL } from "./chain";
 import { AuthError, authenticate } from "./auth";
 import { canonical } from "../core/canonical";
 import { sha256hex } from "../core/registry";
 import { receiptText } from "../core/receipt";
+import { rpcGateway } from "./rpcproxy";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -86,6 +87,8 @@ app.get("/api/public", wrap(async (_q, r) => {
 }));
 
 // Browser-wallet support: network details for MetaMask, a local-only faucet for free test ETH, and receipt cross-checking.
+// Public JSON-RPC gateway for browser wallets: reads, plus signed recordVerification receipts only (see rpcproxy.ts).
+app.post("/rpc", rpcGateway(RPC_URL, () => chain.address, () => 31337));
 app.get("/api/chain/info", wrap(async (_q, r) => { if (!chain.online) throw new Error("chain unreachable"); r.json(await chain.info()); }));
 app.post("/api/wallet/fund", audited("sent test ETH to a wallet (local faucet)", null, async (q, r) => { r.json(await chain.fund(String(q.body?.address ?? ""))); }));
 
