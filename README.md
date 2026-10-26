@@ -13,6 +13,7 @@ npm run e2e          # full incident storyline over HTTP with real proofs (needs
 node scripts/wallet-e2e.mjs   # 30 wallet checks in headless Chrome (needs `npm run dev` or `npm start` running)
 node scripts/wallet-buttons.mjs # clicks every demo and wallet button in headless Chrome and checks its effect (37 checks)
 npm run audit:money             # proves no real-money path exists: code scan, hostile probes of the gateway, who the pages contact (16 checks)
+npm run audit:access            # who may do what: every account against every protected action, plus replay/stale/tampered/impersonation attacks (17 checks)
 node scripts/wallet-walkthrough.mjs # follows the Audit-tab checklist end to end, including switching MetaMask accounts (10 checks)
 ```
 `npm start` builds the web app and serves chain + API + UI (UI from :8787). If you only run the API, verifiers fail closed and the Trust page says why.
